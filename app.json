@@ -9,7 +9,7 @@
     "ios": {
       "supportsTablet": true
     },
-    "android": {
+    "android": { "package": "com.elvankoroglu24.kasif",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
