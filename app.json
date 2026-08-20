@@ -1,7 +1,8 @@
 {
   "expo": {
     "name": "Kasif",
-    "slug": "Kasif", "scheme": "kasif",
+    "slug": "Kasif",
+    "scheme": "kasif",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -9,7 +10,8 @@
     "ios": {
       "supportsTablet": true
     },
-    "android": { "package": "com.elvankoroglu24.kasif",
+    "android": {
+      "package": "com.elvankoroglu24.kasif",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -24,6 +26,11 @@
     "plugins": [
       "expo-router",
       "expo-status-bar"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "eb57976a-e0ee-41fa-a6d4-92a360263eb6"
+      }
+    }
   }
 }
