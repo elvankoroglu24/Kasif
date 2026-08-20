@@ -75,3 +75,64 @@ export interface Commentary {
   created_at: string;
   updated_at: string;
 }
+
+// Research system types
+
+export type ResearchCategory = 
+  | 'hadith' 
+  | 'commentary' 
+  | 'tafsir' 
+  | 'fiqh' 
+  | 'aqidah' 
+  | 'seerah' 
+  | 'arabic' 
+  | 'general' 
+  | 'other' 
+  | string;
+
+export type ResearchStatus = 'draft' | 'completed' | 'archived' | string;
+
+export type ResearchVisibility = 'private' | 'shared' | 'published' | string;
+
+export type SourceType = 'content' | 'work' | 'section' | 'author' | 'edition' | string;
+
+export type RelationType = 'related' | 'follows' | 'expands' | 'contradicts' | string;
+
+export interface Research {
+  id: number;
+  title: string;
+  summary?: string;
+  body?: string;
+  category: ResearchCategory;
+  status: ResearchStatus;
+  visibility: ResearchVisibility;
+  user_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Tag {
+  id: number;
+  name: string;
+  created_at: string;
+}
+
+export interface ResearchTag {
+  research_id: number;
+  tag_id: number;
+}
+
+export interface ResearchSource {
+  id: number;
+  research_id: number;
+  source_type: SourceType;
+  source_id: number;
+  note?: string;
+  created_at: string;
+}
+
+export interface ResearchRelation {
+  research_id: number;
+  related_research_id: number;
+  relation_type: RelationType;
+}

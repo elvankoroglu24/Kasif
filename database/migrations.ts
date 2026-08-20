@@ -1,7 +1,7 @@
 import { SQLiteDatabase } from 'expo-sqlite';
 import { SCHEMA, TABLES, INDEXES } from './schema';
 
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 
 /**
  * Runs database migrations safely.
@@ -29,7 +29,6 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
         ${SCHEMA[TABLES.PLACEHOLDER]}
         INSERT OR REPLACE INTO ${TABLES.METADATA} (key, value) VALUES ('version', '1');
       `);
-      // Fall through to next version
     }
 
     if (currentVersion < 2) {
@@ -41,12 +40,35 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
         ${SCHEMA[TABLES.CONTENTS]}
         ${SCHEMA[TABLES.CONTENT_TRANSLATIONS]}
         ${SCHEMA[TABLES.COMMENTARIES]}
-        ${INDEXES.join('\n')}
+        ${INDEXES[0]}
+        ${INDEXES[1]}
+        ${INDEXES[2]}
+        ${INDEXES[3]}
+        ${INDEXES[4]}
         INSERT OR REPLACE INTO ${TABLES.METADATA} (key, value) VALUES ('version', '2');
       `);
       
-      // Optional: Seed initial test data if version was 0 or 1
       await seedTestData(db);
+    }
+
+    if (currentVersion < 3) {
+      await db.execAsync(`
+        ${SCHEMA[TABLES.RESEARCHES]}
+        ${SCHEMA[TABLES.TAGS]}
+        ${SCHEMA[TABLES.RESEARCH_TAGS]}
+        ${SCHEMA[TABLES.RESEARCH_SOURCES]}
+        ${SCHEMA[TABLES.RESEARCH_RELATIONS]}
+        ${INDEXES[5]}
+        ${INDEXES[6]}
+        ${INDEXES[7]}
+        ${INDEXES[8]}
+        ${INDEXES[9]}
+        ${INDEXES[10]}
+        ${INDEXES[11]}
+        INSERT OR REPLACE INTO ${TABLES.METADATA} (key, value) VALUES ('version', '3');
+      `);
+
+      await seedResearchTestData(db);
     }
 
     console.log('Database migration completed successfully.');
@@ -63,7 +85,6 @@ async function seedTestData(db: SQLiteDatabase) {
   try {
     console.log('Seeding test data...');
     
-    // Check if we already have data
     const workCheck = await db.getFirstAsync(`SELECT id FROM ${TABLES.WORKS} LIMIT 1`);
     if (workCheck) return;
 
@@ -80,5 +101,35 @@ async function seedTestData(db: SQLiteDatabase) {
     console.log('Test data seeded successfully.');
   } catch (error) {
     console.warn('Seed data failed (non-critical):', error);
+  }
+}
+
+/**
+ * Seeds placeholder research test data for schema verification.
+ */
+async function seedResearchTestData(db: SQLiteDatabase) {
+  try {
+    console.log('Seeding research test data...');
+    
+    const researchCheck = await db.getFirstAsync(`SELECT id FROM ${TABLES.RESEARCHES} LIMIT 1`);
+    if (researchCheck) return;
+
+    await db.execAsync(`
+      INSERT INTO ${TABLES.RESEARCHES} (title, summary, body, category, status, visibility) 
+      VALUES ('Örnek Araştırma', 'Bu taslak bir örnek araştırmadır.', 'Araştırma gövde metni ve notlar burada yer alır.', 'general', 'draft', 'private');
+      
+      INSERT INTO ${TABLES.TAGS} (name) VALUES ('genel');
+      INSERT INTO ${TABLES.TAGS} (name) VALUES ('taslak');
+
+      INSERT INTO ${TABLES.RESEARCH_TAGS} (research_id, tag_id) VALUES (1, 1);
+      INSERT INTO ${TABLES.RESEARCH_TAGS} (research_id, tag_id) VALUES (1, 2);
+
+      INSERT INTO ${TABLES.RESEARCH_SOURCES} (research_id, source_type, source_id, note) 
+      VALUES (1, 'work', 1, 'Örnek eser referansı');
+    `);
+    
+    console.log('Research test data seeded successfully.');
+  } catch (error) {
+    console.warn('Research seed data failed (non-critical):', error);
   }
 }

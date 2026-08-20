@@ -1,6 +1,6 @@
 /**
  * Database schema definitions for Kasif app.
- * Designed to be extensible for all Islamic content types (Hadith, Tafsir, Fiqh, etc.)
+ * Designed to be extensible for all Islamic content types and personal research infrastructure.
  */
 
 export const TABLES = {
@@ -13,6 +13,11 @@ export const TABLES = {
   CONTENTS: 'contents',
   CONTENT_TRANSLATIONS: 'content_translations',
   COMMENTARIES: 'commentaries',
+  RESEARCHES: 'researches',
+  TAGS: 'tags',
+  RESEARCH_TAGS: 'research_tags',
+  RESEARCH_SOURCES: 'research_sources',
+  RESEARCH_RELATIONS: 'research_relations',
 };
 
 export const SCHEMA = {
@@ -119,6 +124,57 @@ export const SCHEMA = {
       FOREIGN KEY (author_id) REFERENCES ${TABLES.AUTHORS}(id) ON DELETE SET NULL
     );
   `,
+  [TABLES.RESEARCHES]: `
+    CREATE TABLE IF NOT EXISTS ${TABLES.RESEARCHES} (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      summary TEXT,
+      body TEXT,
+      category TEXT NOT NULL DEFAULT 'general', -- 'hadith', 'commentary', 'tafsir', 'fiqh', 'aqidah', 'seerah', 'arabic', 'general', 'other'
+      status TEXT NOT NULL DEFAULT 'draft', -- 'draft', 'completed', 'archived'
+      visibility TEXT NOT NULL DEFAULT 'private', -- 'private', 'shared', 'published'
+      user_id TEXT, -- Future auth/ownership support
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `,
+  [TABLES.TAGS]: `
+    CREATE TABLE IF NOT EXISTS ${TABLES.TAGS} (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `,
+  [TABLES.RESEARCH_TAGS]: `
+    CREATE TABLE IF NOT EXISTS ${TABLES.RESEARCH_TAGS} (
+      research_id INTEGER NOT NULL,
+      tag_id INTEGER NOT NULL,
+      PRIMARY KEY (research_id, tag_id),
+      FOREIGN KEY (research_id) REFERENCES ${TABLES.RESEARCHES}(id) ON DELETE CASCADE,
+      FOREIGN KEY (tag_id) REFERENCES ${TABLES.TAGS}(id) ON DELETE CASCADE
+    );
+  `,
+  [TABLES.RESEARCH_SOURCES]: `
+    CREATE TABLE IF NOT EXISTS ${TABLES.RESEARCH_SOURCES} (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      research_id INTEGER NOT NULL,
+      source_type TEXT NOT NULL, -- 'content', 'work', 'section', 'author', 'edition'
+      source_id INTEGER NOT NULL,
+      note TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (research_id) REFERENCES ${TABLES.RESEARCHES}(id) ON DELETE CASCADE
+    );
+  `,
+  [TABLES.RESEARCH_RELATIONS]: `
+    CREATE TABLE IF NOT EXISTS ${TABLES.RESEARCH_RELATIONS} (
+      research_id INTEGER NOT NULL,
+      related_research_id INTEGER NOT NULL,
+      relation_type TEXT NOT NULL DEFAULT 'related', -- 'related', 'follows', 'expands', 'contradicts'
+      PRIMARY KEY (research_id, related_research_id),
+      FOREIGN KEY (research_id) REFERENCES ${TABLES.RESEARCHES}(id) ON DELETE CASCADE,
+      FOREIGN KEY (related_research_id) REFERENCES ${TABLES.RESEARCHES}(id) ON DELETE CASCADE
+    );
+  `,
 };
 
 // Index definitions for performance
@@ -128,4 +184,11 @@ export const INDEXES = [
   `CREATE INDEX IF NOT EXISTS idx_contents_section ON ${TABLES.CONTENTS}(section_id);`,
   `CREATE INDEX IF NOT EXISTS idx_translations_content ON ${TABLES.CONTENT_TRANSLATIONS}(content_id);`,
   `CREATE INDEX IF NOT EXISTS idx_commentaries_content ON ${TABLES.COMMENTARIES}(content_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_researches_category ON ${TABLES.RESEARCHES}(category);`,
+  `CREATE INDEX IF NOT EXISTS idx_researches_status ON ${TABLES.RESEARCHES}(status);`,
+  `CREATE INDEX IF NOT EXISTS idx_researches_visibility ON ${TABLES.RESEARCHES}(visibility);`,
+  `CREATE INDEX IF NOT EXISTS idx_researches_updated_at ON ${TABLES.RESEARCHES}(updated_at);`,
+  `CREATE INDEX IF NOT EXISTS idx_research_sources_research ON ${TABLES.RESEARCH_SOURCES}(research_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_research_sources_target ON ${TABLES.RESEARCH_SOURCES}(source_type, source_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_research_tags_tag ON ${TABLES.RESEARCH_TAGS}(tag_id);`,
 ];
