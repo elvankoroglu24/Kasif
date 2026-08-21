@@ -3,7 +3,7 @@ import json
 import os
 import datetime
 
-DB_PATH = '/home/ubuntu/Kasif/kasif.db'
+DB_PATH = os.path.join(os.path.dirname(__file__), '../kasif.db')
 DATA_DIR = '/home/ubuntu/hadith-data'
 
 BOOKS = [

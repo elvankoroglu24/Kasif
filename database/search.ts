@@ -32,15 +32,15 @@ export class SearchService {
         SELECT 
           f.content_id as id,
           'content' as type,
-          w.title as work_title,
+          COALESCE(w.title, 'Hadis Kaynağı') as work_title,
           a.name as author_name,
           f.language,
           snippet(${TABLES.FTS_CONTENT}, 2, '<b>', '</b>', '...', 20) as snippet,
           bm25(${TABLES.FTS_CONTENT}) as rank
         FROM ${TABLES.FTS_CONTENT} f
         JOIN ${TABLES.CONTENTS} c ON f.content_id = c.id
-        JOIN ${TABLES.SECTIONS} s ON c.section_id = s.id
-        JOIN ${TABLES.WORKS} w ON s.work_id = w.id
+        LEFT JOIN ${TABLES.SECTIONS} s ON c.section_id = s.id
+        LEFT JOIN ${TABLES.WORKS} w ON s.work_id = w.id
         LEFT JOIN ${TABLES.AUTHORS} a ON w.author_id = a.id
         WHERE ${TABLES.FTS_CONTENT} MATCH ?
         ORDER BY rank
