@@ -181,7 +181,7 @@ export default function ContentDetailScreen() {
         <View style={styles.actionRow}>
           <TouchableOpacity style={styles.actionButton} onPress={handleAddResearch}>
             <Ionicons name="add-circle-outline" size={20} color="#fff" />
-            <Text style={styles.actionButtonText}>Araştırma / Şerh Ekle</Text>
+            <Text style={styles.actionButtonText}>Bu Hadis Üzerinde Çalışıyorum</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.actionButton, styles.secondaryAction]}>
             <Ionicons name="star-outline" size={20} color="#2196F3" />
@@ -191,7 +191,7 @@ export default function ContentDetailScreen() {
 
         {/* My Researches Section */}
         <View style={styles.researchSection}>
-          <Text style={styles.sectionHeading}>Araştırmalarım</Text>
+          <Text style={styles.sectionHeading}>Çalışmalarım ({linkedResearches.length})</Text>
           {linkedResearches.length > 0 ? (
             linkedResearches.map((research) => (
               <TouchableOpacity 

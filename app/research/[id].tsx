@@ -12,6 +12,7 @@ import {
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ResearchService } from '../../database/research';
+import { ContentService, ContentDetail } from '../../database/content';
 import { Research, Tag, ResearchSource } from '../../database/types';
 
 export default function ResearchDetailScreen() {
@@ -20,6 +21,7 @@ export default function ResearchDetailScreen() {
   const [research, setResearch] = useState<Research | null>(null);
   const [tags, setTags] = useState<Tag[]>([]);
   const [sources, setSources] = useState<ResearchSource[]>([]);
+  const [linkedHadiths, setLinkedHadiths] = useState<Array<{ source: ResearchSource; content: ContentDetail }>>([]);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
@@ -34,6 +36,14 @@ export default function ResearchDetailScreen() {
         setTags(researchTags);
         const researchSources = await ResearchService.getResearchSources(researchId);
         setSources(researchSources);
+        const contentSources = researchSources.filter((source) => source.source_type === 'content');
+        const hadithResults = await Promise.all(
+          contentSources.map(async (source) => {
+            const content = await ContentService.getContentDetail(source.source_id);
+            return content?.type === 'hadith' ? { source, content } : null;
+          }),
+        );
+        setLinkedHadiths(hadithResults.filter((item): item is { source: ResearchSource; content: ContentDetail } => item !== null));
       } else {
         Alert.alert('Hata', 'Araştırma bulunamadı.');
         router.back();
@@ -163,6 +173,30 @@ export default function ResearchDetailScreen() {
           </View>
         )}
 
+        {linkedHadiths.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Bağlı Hadis{linkedHadiths.length > 1 ? `ler (${linkedHadiths.length})` : ''}</Text>
+            {linkedHadiths.map(({ source, content }) => (
+              <TouchableOpacity
+                key={`hadith-${source.id}`}
+                style={styles.linkedHadithCard}
+                onPress={() => router.push(`/content/${content.id}`)}
+              >
+                <View style={styles.linkedHadithHeader}>
+                  <Ionicons name="book-outline" size={19} color="#1976D2" />
+                  <Text style={styles.linkedHadithTitle} numberOfLines={1}>
+                    {content.work?.title || 'Hadis'} · No: {content.number_in_work || content.id}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={17} color="#9E9E9E" />
+                </View>
+                <Text style={styles.linkedHadithText} numberOfLines={3}>
+                  {getContentPreview(content)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Kaynaklar</Text>
           {sources.length > 0 ? (
@@ -253,6 +287,13 @@ const getSourceTypeLabel = (type: string) => {
   }
 };
 
+function getContentPreview(content: ContentDetail) {
+  const preferred = content.translations.find((translation) => translation.language === 'tr')
+    || content.translations.find((translation) => translation.language === 'ar')
+    || content.translations[0];
+  return preferred?.text_content || 'Hadis metni bulunmuyor.';
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -335,6 +376,30 @@ const styles = StyleSheet.create({
   tagText: {
     fontSize: 14,
     color: '#2196F3',
+  },
+  linkedHadithCard: {
+    backgroundColor: '#E3F2FD',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+  },
+  linkedHadithHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  linkedHadithTitle: {
+    flex: 1,
+    color: '#1976D2',
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 7,
+    marginRight: 6,
+  },
+  linkedHadithText: {
+    color: '#455A64',
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 8,
   },
   sourceItem: {
     flexDirection: 'row',

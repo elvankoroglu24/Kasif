@@ -37,6 +37,16 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="worked"
+        options={{
+          title: 'Çalıştığım',
+          headerTitle: 'Çalıştığım Hadisler',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="flask-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: 'Ayarlar',

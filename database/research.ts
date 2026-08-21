@@ -2,6 +2,22 @@ import { getDb } from './index';
 import { TABLES } from './schema';
 import { Research, Tag, ResearchTag, ResearchSource, ResearchCategory, ResearchStatus, ResearchVisibility } from './types';
 
+export interface WorkedHadithItem {
+  content_id: number;
+  number_in_work: string | null;
+  work_title: string;
+  author_name: string | null;
+  text_snippet: string;
+  research_count: number;
+  has_commentary: boolean;
+  has_notes: boolean;
+  has_research: boolean;
+  has_sources: boolean;
+  source_count: number;
+  statuses: string[];
+  last_worked_at: string;
+}
+
 export const ResearchService = {
   /**
    * Fetches all researches with optional filtering
@@ -89,6 +105,88 @@ export const ResearchService = {
        ORDER BY r.updated_at DESC`,
       [sourceType, sourceId]
     );
+  },
+
+  /**
+   * Fetches worked hadiths (hadiths with researches, notes, commentaries, or sources)
+   */
+  async getWorkedHadiths(filterType?: string, sortBy?: string): Promise<WorkedHadithItem[]> {
+    const db = getDb();
+    
+    // We aggregate researches linked via research_sources where source_type = 'content'
+    let query = `
+      SELECT 
+        c.id as content_id,
+        c.number_in_work,
+        w.title as work_title,
+        a.name as author_name,
+        SUBSTR(COALESCE(ct_tr.text_content, ct_ar.text_content), 1, 120) as text_snippet,
+        COUNT(DISTINCT r.id) as research_count,
+        MAX(CASE WHEN r.category = 'commentary' THEN 1 ELSE 0 END) as has_commentary,
+        MAX(CASE WHEN LENGTH(r.body) > 0 THEN 1 ELSE 0 END) as has_notes,
+        1 as has_research,
+        COUNT(DISTINCT rs.id) as source_count,
+        MAX(CASE WHEN rs.id IS NOT NULL THEN 1 ELSE 0 END) as has_sources,
+        GROUP_CONCAT(DISTINCT r.status) as statuses_str,
+        MAX(r.updated_at) as last_worked_at
+      FROM ${TABLES.CONTENTS} c
+      JOIN ${TABLES.RESEARCH_SOURCES} rs ON c.id = rs.source_id AND rs.source_type = 'content'
+      JOIN ${TABLES.RESEARCHES} r ON rs.research_id = r.id
+      LEFT JOIN ${TABLES.SECTIONS} s ON c.section_id = s.id
+      LEFT JOIN ${TABLES.WORKS} w ON s.work_id = w.id
+      LEFT JOIN ${TABLES.AUTHORS} a ON w.author_id = a.id
+      LEFT JOIN ${TABLES.CONTENT_TRANSLATIONS} ct_tr ON c.id = ct_tr.content_id AND ct_tr.language = 'tr'
+      LEFT JOIN ${TABLES.CONTENT_TRANSLATIONS} ct_ar ON c.id = ct_ar.content_id AND ct_ar.language = 'ar'
+      WHERE c.type = 'hadith'
+      GROUP BY c.id
+    `;
+
+    // Add filtering
+    if (filterType) {
+      if (filterType === 'commentary') {
+        query += ` HAVING has_commentary = 1`;
+      } else if (filterType === 'notes') {
+        query += ` HAVING has_notes = 1`;
+      } else if (filterType === 'research') {
+        query += ` HAVING research_count > 0`;
+      } else if (filterType === 'sources') {
+        query += ` HAVING has_sources = 1`;
+      } else if (filterType === 'draft') {
+        query += ` HAVING statuses_str LIKE '%draft%'`;
+      } else if (filterType === 'completed') {
+        query += ` HAVING statuses_str LIKE '%completed%'`;
+      }
+    }
+
+    // Add sorting
+    if (sortBy === 'oldest') {
+      query += ` ORDER BY last_worked_at ASC`;
+    } else if (sortBy === 'work') {
+      query += ` ORDER BY work_title ASC, c.id ASC`;
+    } else if (sortBy === 'source') {
+      query += ` ORDER BY source_count DESC, last_worked_at DESC`;
+    } else {
+      // Default: last_worked_at DESC
+      query += ` ORDER BY last_worked_at DESC`;
+    }
+
+    const rows = await db.getAllAsync<any>(query);
+
+    return rows.map(row => ({
+      content_id: row.content_id,
+      number_in_work: row.number_in_work,
+      work_title: row.work_title || 'Bilinmeyen Eser',
+      author_name: row.author_name,
+      text_snippet: row.text_snippet ? row.text_snippet + '...' : 'Metin bulunmuyor.',
+      research_count: row.research_count,
+      has_commentary: Boolean(row.has_commentary),
+      has_notes: Boolean(row.has_notes),
+      has_research: Boolean(row.has_research),
+      has_sources: Boolean(row.has_sources),
+      source_count: Number(row.source_count || 0),
+      statuses: row.statuses_str ? row.statuses_str.split(',') : [],
+      last_worked_at: row.last_worked_at
+    }));
   },
 
   /**
