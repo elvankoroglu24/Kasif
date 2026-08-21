@@ -137,6 +137,23 @@ export interface ResearchRelation {
   relation_type: RelationType;
 }
 
+export interface Favorite {
+  id: number;
+  content_id: number;
+  created_at: string;
+}
+
+export interface FavoriteHadithItem {
+  content_id: number;
+  number_in_work: string | null;
+  work_title: string;
+  author_name: string | null;
+  section_title: string | null;
+  section_metadata: string | null;
+  text_snippet: string;
+  favorited_at: string;
+}
+
 // Search system types
 
 export type SearchResultType = 'content' | 'commentary' | 'research';

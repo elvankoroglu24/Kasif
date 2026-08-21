@@ -19,6 +19,7 @@ export const TABLES = {
   RESEARCH_TAGS: 'research_tags',
   RESEARCH_SOURCES: 'research_sources',
   RESEARCH_RELATIONS: 'research_relations',
+  FAVORITES: 'favorites',
   // FTS5 Virtual Tables
   FTS_CONTENT: 'fts_content',
   FTS_COMMENTARY: 'fts_commentary',
@@ -180,6 +181,14 @@ export const SCHEMA = {
       FOREIGN KEY (related_research_id) REFERENCES ${TABLES.RESEARCHES}(id) ON DELETE CASCADE
     );
   `,
+  [TABLES.FAVORITES]: `
+    CREATE TABLE IF NOT EXISTS ${TABLES.FAVORITES} (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      content_id INTEGER NOT NULL UNIQUE,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (content_id) REFERENCES ${TABLES.CONTENTS}(id) ON DELETE CASCADE
+    );
+  `,
   // FTS5 Virtual Tables
   [TABLES.FTS_CONTENT]: `
     CREATE VIRTUAL TABLE IF NOT EXISTS ${TABLES.FTS_CONTENT} USING fts5(
@@ -222,4 +231,5 @@ export const INDEXES = [
   `CREATE INDEX IF NOT EXISTS idx_research_sources_research ON ${TABLES.RESEARCH_SOURCES}(research_id);`,
   `CREATE INDEX IF NOT EXISTS idx_research_sources_target ON ${TABLES.RESEARCH_SOURCES}(source_type, source_id);`,
   `CREATE INDEX IF NOT EXISTS idx_research_tags_tag ON ${TABLES.RESEARCH_TAGS}(tag_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_favorites_created_at ON ${TABLES.FAVORITES}(created_at);`,
 ];

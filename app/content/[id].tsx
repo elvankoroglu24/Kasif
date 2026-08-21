@@ -16,13 +16,16 @@ import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ContentService, ContentDetail } from '../../database/content';
 import { ResearchService } from '../../database/research';
+import { FavoritesService } from '../../database/favorites';
 import { Research } from '../../database/types';
+import { displaySectionTitle } from '../../utils/sectionTitle';
 
 export default function ContentDetailScreen() {
   const { id, type } = useLocalSearchParams();
   const router = useRouter();
   const [content, setContent] = useState<ContentDetail | null>(null);
   const [linkedResearches, setLinkedResearches] = useState<Research[]>([]);
+  const [isFavorite, setIsFavorite] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
@@ -33,6 +36,7 @@ export default function ContentDetailScreen() {
       const detail = await ContentService.getContentDetail(contentId);
       if (detail) {
         setContent(detail);
+        setIsFavorite(await FavoritesService.isFavorite(contentId));
         // Load linked researches
         const researches = await ResearchService.getResearchesBySource('content', contentId);
         setLinkedResearches(researches);
@@ -72,6 +76,22 @@ export default function ContentDetailScreen() {
     const source = content.work ? `\n\nKaynak: ${content.work.title}` : '';
     Clipboard.setString(`${text}${source}`);
     Alert.alert('Başarılı', 'Metin panoya kopyalandı.');
+  };
+
+  const handleToggleFavorite = async () => {
+    if (!content) return;
+
+    try {
+      const nextValue = await FavoritesService.toggleFavorite(content.id);
+      setIsFavorite(nextValue);
+      Alert.alert(
+        'Favoriler',
+        nextValue ? 'Hadis favorilere eklendi.' : 'Hadis favorilerden çıkarıldı.',
+      );
+    } catch (error) {
+      console.error('Favori güncellenemedi:', error);
+      Alert.alert('Hata', 'Favori durumu güncellenemedi. Lütfen tekrar deneyin.');
+    }
   };
 
   const handleAddResearch = () => {
@@ -136,7 +156,7 @@ export default function ContentDetailScreen() {
             </View>
           )}
           {content.section && (
-            <Text style={styles.sectionTitle}>{content.section.title}</Text>
+            <Text style={styles.sectionTitle}>{displaySectionTitle(content.section)}</Text>
           )}
         </View>
 
@@ -183,9 +203,20 @@ export default function ContentDetailScreen() {
             <Ionicons name="add-circle-outline" size={20} color="#fff" />
             <Text style={styles.actionButtonText}>Bu Hadis Üzerinde Çalışıyorum</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionButton, styles.secondaryAction]}>
-            <Ionicons name="star-outline" size={20} color="#2196F3" />
-            <Text style={[styles.actionButtonText, { color: '#2196F3' }]}>Favori</Text>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.secondaryAction, isFavorite && styles.favoriteActive]}
+            onPress={handleToggleFavorite}
+            accessibilityRole="button"
+            accessibilityLabel={isFavorite ? 'Favorilerden çıkar' : 'Favorilere ekle'}
+          >
+            <Ionicons
+              name={isFavorite ? 'star' : 'star-outline'}
+              size={20}
+              color={isFavorite ? '#F9A825' : '#2196F3'}
+            />
+            <Text style={[styles.actionButtonText, { color: isFavorite ? '#F57F17' : '#2196F3' }]}>
+              {isFavorite ? 'Favorilerden çıkar' : 'Favori'}
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -400,6 +431,10 @@ const styles = StyleSheet.create({
     borderColor: '#2196F3',
     marginRight: 0,
     marginLeft: 10,
+  },
+  favoriteActive: {
+    borderColor: '#F9A825',
+    backgroundColor: '#FFFDE7',
   },
   actionButtonText: {
     color: '#fff',

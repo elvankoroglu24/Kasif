@@ -1,7 +1,7 @@
 import { SQLiteDatabase } from 'expo-sqlite';
 import { SCHEMA, TABLES, INDEXES } from './schema';
 
-export const DATABASE_VERSION = 7;
+export const DATABASE_VERSION = 8;
 
 const SEARCH_TRIGGERS_SQL = `
   CREATE TRIGGER IF NOT EXISTS tr_content_translations_ai AFTER INSERT ON ${TABLES.CONTENT_TRANSLATIONS} BEGIN
@@ -49,9 +49,8 @@ const SEARCH_TRIGGERS_SQL = `
 /**
  * Runs all schema migrations safely and non-destructively.
  *
- * Version 7 is the preloaded-database contract: the complete relational schema
- * exists, content tables may contain static hadith data, and every FTS5 row is
- * rebuilt from its source table exactly once during the upgrade.
+ * Version 8 adds the user-owned favorites table without changing static content
+ * or rebuilding the preloaded hadith and FTS5 data.
  */
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
   try {
@@ -161,6 +160,14 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
       `);
     }
 
+    if (currentVersion < 8) {
+      await ensureFullSchemaAndSearchTriggers(db);
+      await db.execAsync(`
+        INSERT OR REPLACE INTO ${TABLES.METADATA} (key, value) VALUES ('version', '8');
+        PRAGMA user_version = 8;
+      `);
+    }
+
     await ensureFullSchemaAndSearchTriggers(db);
     console.log('Database migration completed successfully.');
   } catch (error) {
@@ -184,6 +191,7 @@ async function ensureFullSchemaAndSearchTriggers(db: SQLiteDatabase): Promise<vo
     ${SCHEMA[TABLES.RESEARCH_TAGS]}
     ${SCHEMA[TABLES.RESEARCH_SOURCES]}
     ${SCHEMA[TABLES.RESEARCH_RELATIONS]}
+    ${SCHEMA[TABLES.FAVORITES]}
     ${SCHEMA[TABLES.FTS_CONTENT]}
     ${SCHEMA[TABLES.FTS_COMMENTARY]}
     ${SCHEMA[TABLES.FTS_RESEARCH]}
