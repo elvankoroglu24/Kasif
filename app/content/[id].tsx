@@ -9,25 +9,33 @@ import {
   Alert,
   Share,
   Clipboard,
-  Platform
+  Platform,
+  FlatList
 } from 'react-native';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ContentService, ContentDetail } from '../../database/content';
+import { ResearchService } from '../../database/research';
+import { Research } from '../../database/types';
 
 export default function ContentDetailScreen() {
   const { id, type } = useLocalSearchParams();
   const router = useRouter();
   const [content, setContent] = useState<ContentDetail | null>(null);
+  const [linkedResearches, setLinkedResearches] = useState<Research[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
     if (!id) return;
     try {
       setLoading(true);
-      const detail = await ContentService.getContentDetail(parseInt(id as string, 10));
+      const contentId = parseInt(id as string, 10);
+      const detail = await ContentService.getContentDetail(contentId);
       if (detail) {
         setContent(detail);
+        // Load linked researches
+        const researches = await ResearchService.getResearchesBySource('content', contentId);
+        setLinkedResearches(researches);
       } else {
         Alert.alert('Hata', 'İçerik bulunamadı.');
         router.back();
@@ -66,9 +74,25 @@ export default function ContentDetailScreen() {
     Alert.alert('Başarılı', 'Metin panoya kopyalandı.');
   };
 
-  const handleAddToResearch = () => {
-    // Placeholder for Task 7/8 functionality
-    Alert.alert('Bilgi', 'Bu özellik bir sonraki aşamada eklenecektir. İçeriği araştırmalarınıza kaynak olarak bağlayabileceksiniz.');
+  const handleAddResearch = () => {
+    if (!content) return;
+    
+    let prefillTitle = '';
+    if (content.type === 'hadith') {
+      const metadata = content.metadata ? JSON.parse(content.metadata) : {};
+      const hadithNo = metadata.hadith_number || content.number_in_work || content.id;
+      prefillTitle = `${content.work?.title || 'Hadis'} No: ${hadithNo}`;
+    }
+
+    router.push({
+      pathname: '/research/create',
+      params: { 
+        sourceId: content.id,
+        sourceType: 'content',
+        prefillTitle: prefillTitle,
+        prefillCategory: content.type === 'hadith' ? 'hadith' : 'general'
+      }
+    });
   };
 
   if (loading) {
@@ -80,6 +104,8 @@ export default function ContentDetailScreen() {
   }
 
   if (!content) return null;
+
+  const metadata = content.metadata ? JSON.parse(content.metadata) : {};
 
   return (
     <View style={styles.container}>
@@ -114,6 +140,28 @@ export default function ContentDetailScreen() {
           )}
         </View>
 
+        {/* Hadith Metadata (if applicable) */}
+        {content.type === 'hadith' && (
+          <View style={styles.metadataBox}>
+            <View style={styles.metadataRow}>
+              <Text style={styles.metadataLabel}>Hadis No:</Text>
+              <Text style={styles.metadataValue}>{metadata.hadith_number || content.number_in_work}</Text>
+            </View>
+            {metadata.grade && (
+              <View style={styles.metadataRow}>
+                <Text style={styles.metadataLabel}>Derece:</Text>
+                <Text style={[styles.metadataValue, styles.gradeText]}>{metadata.grade}</Text>
+              </View>
+            )}
+            {metadata.reference && (
+              <View style={styles.metadataRow}>
+                <Text style={styles.metadataLabel}>Referans:</Text>
+                <Text style={styles.metadataValue}>{metadata.reference}</Text>
+              </View>
+            )}
+          </View>
+        )}
+
         {/* Translations (Arabic first if available) */}
         {content.translations.sort((a, b) => a.language === 'ar' ? -1 : 1).map((trans) => (
           <View key={trans.id} style={styles.textSection}>
@@ -131,9 +179,9 @@ export default function ContentDetailScreen() {
 
         {/* Action Buttons */}
         <View style={styles.actionRow}>
-          <TouchableOpacity style={styles.actionButton} onPress={handleAddToResearch}>
+          <TouchableOpacity style={styles.actionButton} onPress={handleAddResearch}>
             <Ionicons name="add-circle-outline" size={20} color="#fff" />
-            <Text style={styles.actionButtonText}>Araştırmaya Ekle</Text>
+            <Text style={styles.actionButtonText}>Araştırma / Şerh Ekle</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.actionButton, styles.secondaryAction]}>
             <Ionicons name="star-outline" size={20} color="#2196F3" />
@@ -141,7 +189,34 @@ export default function ContentDetailScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Commentaries */}
+        {/* My Researches Section */}
+        <View style={styles.researchSection}>
+          <Text style={styles.sectionHeading}>Araştırmalarım</Text>
+          {linkedResearches.length > 0 ? (
+            linkedResearches.map((research) => (
+              <TouchableOpacity 
+                key={research.id} 
+                style={styles.researchCard}
+                onPress={() => router.push(`/research/${research.id}`)}
+              >
+                <View style={styles.researchCardHeader}>
+                  <Text style={styles.researchCardTitle} numberOfLines={1}>{research.title}</Text>
+                  <View style={[styles.statusBadge, { backgroundColor: getStatusColor(research.status) }]}>
+                    <Text style={styles.statusText}>{research.status}</Text>
+                  </View>
+                </View>
+                {research.summary && <Text style={styles.researchCardSummary} numberOfLines={2}>{research.summary}</Text>}
+                <Text style={styles.researchCardDate}>{new Date(research.updated_at).toLocaleDateString('tr-TR')}</Text>
+              </TouchableOpacity>
+            ))
+          ) : (
+            <View style={styles.emptyBox}>
+              <Text style={styles.emptyText}>Bu hadis hakkında henüz bir araştırmanız bulunmuyor.</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Commentaries (Existing ones) */}
         {content.commentaries.length > 0 && (
           <View style={styles.commentarySection}>
             <Text style={styles.sectionHeading}>Şerhler</Text>
@@ -161,6 +236,9 @@ export default function ContentDetailScreen() {
         <View style={styles.footer}>
           <Text style={styles.footerText}>İçerik No: {content.number_in_work || content.id}</Text>
           <Text style={styles.footerText}>Tür: {getLabelByType(content.type)}</Text>
+          {metadata.source_dataset && (
+            <Text style={styles.footerText}>Kaynak Veri: {metadata.source_dataset} ({metadata.license})</Text>
+          )}
         </View>
       </ScrollView>
     </View>
@@ -186,6 +264,15 @@ function getLabelByType(type: string) {
     case 'tafsir': return 'Tefsir';
     case 'fiqh': return 'Fıkıh';
     default: return type;
+  }
+}
+
+function getStatusColor(status: string) {
+  switch (status) {
+    case 'draft': return '#FFA000';
+    case 'completed': return '#4CAF50';
+    case 'archived': return '#9E9E9E';
+    default: return '#2196F3';
   }
 }
 
@@ -231,6 +318,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#757575',
     marginTop: 4,
+  },
+  metadataBox: {
+    padding: 15,
+    margin: 20,
+    backgroundColor: '#E3F2FD',
+    borderRadius: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: '#2196F3',
+  },
+  metadataRow: {
+    flexDirection: 'row',
+    marginBottom: 4,
+  },
+  metadataLabel: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#555',
+    width: 80,
+  },
+  metadataValue: {
+    fontSize: 12,
+    color: '#333',
+    flex: 1,
+  },
+  gradeText: {
+    fontWeight: 'bold',
+    color: '#2E7D32',
   },
   textSection: {
     padding: 20,
@@ -292,15 +406,77 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginLeft: 8,
   },
-  commentarySection: {
+  researchSection: {
     padding: 20,
-    backgroundColor: '#fafafa',
+    backgroundColor: '#fff',
   },
   sectionHeading: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#333',
     marginBottom: 16,
+  },
+  researchCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#eee',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  researchCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  researchCardTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    flex: 1,
+    marginRight: 8,
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  statusText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+  },
+  researchCardSummary: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 8,
+  },
+  researchCardDate: {
+    fontSize: 12,
+    color: '#999',
+    textAlign: 'right',
+  },
+  emptyBox: {
+    padding: 20,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  emptyText: {
+    color: '#999',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  commentarySection: {
+    padding: 20,
+    backgroundColor: '#fafafa',
   },
   commentaryCard: {
     backgroundColor: '#fff',

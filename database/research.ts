@@ -78,6 +78,20 @@ export const ResearchService = {
   },
 
   /**
+   * Fetches researches linked to a specific source
+   */
+  async getResearchesBySource(sourceType: string, sourceId: number): Promise<Research[]> {
+    const db = getDb();
+    return await db.getAllAsync<Research>(
+      `SELECT r.* FROM ${TABLES.RESEARCHES} r
+       JOIN ${TABLES.RESEARCH_SOURCES} rs ON r.id = rs.research_id
+       WHERE rs.source_type = ? AND rs.source_id = ?
+       ORDER BY r.updated_at DESC`,
+      [sourceType, sourceId]
+    );
+  },
+
+  /**
    * Creates a new research entry
    */
   async createResearch(data: {
@@ -88,10 +102,10 @@ export const ResearchService = {
     status: string;
     visibility: string;
     tags?: string[];
+    sources?: { sourceType: string; sourceId: number; note?: string }[];
   }): Promise<number> {
     const db = getDb();
     
-    // Start transaction manually if needed, but expo-sqlite handles simple execs
     const result = await db.runAsync(
       `INSERT INTO ${TABLES.RESEARCHES} (title, summary, body, category, status, visibility, updated_at) 
        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
@@ -100,12 +114,12 @@ export const ResearchService = {
 
     const researchId = result.lastInsertRowId;
 
+    // Handle Tags
     if (data.tags && data.tags.length > 0) {
       for (const tagName of data.tags) {
         const trimmedTag = tagName.trim().toLowerCase();
         if (!trimmedTag) continue;
 
-        // Ensure tag exists
         await db.runAsync(`INSERT OR IGNORE INTO ${TABLES.TAGS} (name) VALUES (?)`, [trimmedTag]);
         const tag = await db.getFirstAsync<{ id: number }>(`SELECT id FROM ${TABLES.TAGS} WHERE name = ?`, [trimmedTag]);
         
@@ -115,6 +129,17 @@ export const ResearchService = {
             [researchId, tag.id]
           );
         }
+      }
+    }
+
+    // Handle Sources
+    if (data.sources && data.sources.length > 0) {
+      for (const source of data.sources) {
+        await db.runAsync(
+          `INSERT INTO ${TABLES.RESEARCH_SOURCES} (research_id, source_type, source_id, note) 
+           VALUES (?, ?, ?, ?)`,
+          [researchId, source.sourceType, source.sourceId, source.note || null]
+        );
       }
     }
 
@@ -143,10 +168,8 @@ export const ResearchService = {
     );
 
     if (data.tags !== undefined) {
-      // Clear existing tags
       await db.runAsync(`DELETE FROM ${TABLES.RESEARCH_TAGS} WHERE research_id = ?`, [id]);
       
-      // Add new tags
       for (const tagName of data.tags) {
         const trimmedTag = tagName.trim().toLowerCase();
         if (!trimmedTag) continue;
@@ -165,11 +188,22 @@ export const ResearchService = {
   },
 
   /**
+   * Adds a source to an existing research
+   */
+  async addSourceToResearch(researchId: number, sourceType: string, sourceId: number, note?: string): Promise<void> {
+    const db = getDb();
+    await db.runAsync(
+      `INSERT OR IGNORE INTO ${TABLES.RESEARCH_SOURCES} (research_id, source_type, source_id, note) 
+       VALUES (?, ?, ?, ?)`,
+      [researchId, sourceType, sourceId, note || null]
+    );
+  },
+
+  /**
    * Deletes a research entry and its relations
    */
   async deleteResearch(id: number): Promise<void> {
     const db = getDb();
-    // Foreign keys with ON DELETE CASCADE will handle tags and sources relations
     await db.runAsync(`DELETE FROM ${TABLES.RESEARCHES} WHERE id = ?`, [id]);
   },
 

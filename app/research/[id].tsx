@@ -85,6 +85,13 @@ export default function ResearchDetailScreen() {
     }
   };
 
+  const handleSourcePress = (source: ResearchSource) => {
+    if (source.source_type === 'content') {
+      router.push(`/content/${source.source_id}`);
+    }
+    // Handle other source types as needed
+  };
+
   if (loading) {
     return (
       <View style={styles.centerContainer}>
@@ -160,13 +167,20 @@ export default function ResearchDetailScreen() {
           <Text style={styles.sectionTitle}>Kaynaklar</Text>
           {sources.length > 0 ? (
             sources.map((source) => (
-              <View key={source.id} style={styles.sourceItem}>
+              <TouchableOpacity 
+                key={source.id} 
+                style={styles.sourceItem}
+                onPress={() => handleSourcePress(source)}
+              >
                 <Ionicons name="link-outline" size={18} color="#2196F3" />
                 <Text style={styles.sourceText}>
                   {getSourceTypeLabel(source.source_type)}: ID {source.source_id}
                   {source.note ? ` - ${source.note}` : ''}
                 </Text>
-              </View>
+                {source.source_type === 'content' && (
+                  <Ionicons name="chevron-forward" size={14} color="#ccc" style={{ marginLeft: 'auto' }} />
+                )}
+              </TouchableOpacity>
             ))
           ) : (
             <Text style={styles.emptyInfoText}>Henüz kaynak eklenmemiş.</Text>
@@ -325,12 +339,16 @@ const styles = StyleSheet.create({
   sourceItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
+    backgroundColor: '#f9f9f9',
+    padding: 12,
+    borderRadius: 8,
   },
   sourceText: {
     fontSize: 14,
-    color: '#666',
+    color: '#2196F3',
     marginLeft: 8,
+    fontWeight: '500',
   },
   emptyInfoText: {
     fontSize: 14,

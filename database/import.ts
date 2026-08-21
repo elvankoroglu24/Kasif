@@ -50,10 +50,6 @@ export class ContentImportService {
     let workId = 0;
 
     try {
-      // In expo-sqlite, we can use withTransactionAsync or manually manage it
-      // For this environment, we'll use a simple sequential execution
-      // but in a real app, withTransactionAsync is preferred.
-      
       await db.execAsync('BEGIN TRANSACTION;');
 
       // 1. Handle Author
@@ -70,21 +66,31 @@ export class ContentImportService {
         authorId = author?.id || null;
       }
 
-      // 2. Handle Work
-      const workResult = await db.runAsync(
-        `INSERT INTO ${TABLES.WORKS} (author_id, title, alternative_title, type, language, description, metadata) 
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          authorId,
-          data.title,
-          data.alternative_title || null,
-          data.type,
-          data.language,
-          data.description || null,
-          data.metadata ? JSON.stringify(data.metadata) : null
-        ]
+      // 2. Handle Work (Check if already exists by title and author)
+      const existingWork = await db.getFirstAsync<{ id: number }>(
+        `SELECT id FROM ${TABLES.WORKS} WHERE title = ? AND (author_id = ? OR author_id IS NULL)`,
+        [data.title, authorId]
       );
-      workId = workResult.lastInsertRowId;
+
+      if (existingWork) {
+        workId = existingWork.id;
+        // Optionally update work metadata here if needed
+      } else {
+        const workResult = await db.runAsync(
+          `INSERT INTO ${TABLES.WORKS} (author_id, title, alternative_title, type, language, description, metadata) 
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            authorId,
+            data.title,
+            data.alternative_title || null,
+            data.type,
+            data.language,
+            data.description || null,
+            data.metadata ? JSON.stringify(data.metadata) : null
+          ]
+        );
+        workId = workResult.lastInsertRowId;
+      }
 
       // 3. Handle Sections and Contents recursively
       for (const section of data.sections) {
@@ -106,46 +112,76 @@ export class ContentImportService {
     sectionData: ImportSectionItem,
     parentId: number | null
   ): Promise<number> {
-    const sectionResult = await db.runAsync(
-      `INSERT INTO ${TABLES.SECTIONS} (work_id, parent_id, title, number, type, metadata) 
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [
-        workId,
-        parentId,
-        sectionData.title,
-        sectionData.number || null,
-        sectionData.type,
-        sectionData.metadata ? JSON.stringify(sectionData.metadata) : null
-      ]
+    // Check if section already exists in this work/parent
+    const existingSection = await db.getFirstAsync<{ id: number }>(
+      `SELECT id FROM ${TABLES.SECTIONS} WHERE work_id = ? AND parent_id ${parentId ? '= ?' : 'IS NULL'} AND title = ?`,
+      parentId ? [workId, parentId, sectionData.title] : [workId, sectionData.title]
     );
-    const sectionId = sectionResult.lastInsertRowId;
+
+    let sectionId: number;
+    if (existingSection) {
+      sectionId = existingSection.id;
+    } else {
+      const sectionResult = await db.runAsync(
+        `INSERT INTO ${TABLES.SECTIONS} (work_id, parent_id, title, number, type, metadata) 
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          workId,
+          parentId,
+          sectionData.title,
+          sectionData.number || null,
+          sectionData.type,
+          sectionData.metadata ? JSON.stringify(sectionData.metadata) : null
+        ]
+      );
+      sectionId = sectionResult.lastInsertRowId;
+    }
 
     // Import contents
     for (const content of sectionData.contents) {
-      const contentResult = await db.runAsync(
-        `INSERT INTO ${TABLES.CONTENTS} (section_id, type, number_in_work, metadata) 
-         VALUES (?, ?, ?, ?)`,
-        [
-          sectionId,
-          content.type,
-          content.number_in_work || null,
-          content.metadata ? JSON.stringify(content.metadata) : null
-        ]
+      // Duplicate check for content (hadith)
+      // Using number_in_work and type as a basic unique constraint
+      const existingContent = await db.getFirstAsync<{ id: number }>(
+        `SELECT id FROM ${TABLES.CONTENTS} WHERE section_id = ? AND type = ? AND number_in_work = ?`,
+        [sectionId, content.type, content.number_in_work || '']
       );
-      const contentId = contentResult.lastInsertRowId;
 
-      // Import translations
-      for (const trans of content.translations) {
-        await db.runAsync(
-          `INSERT INTO ${TABLES.CONTENT_TRANSLATIONS} (content_id, language, text_content, metadata) 
+      let contentId: number;
+      if (existingContent) {
+        contentId = existingContent.id;
+      } else {
+        const contentResult = await db.runAsync(
+          `INSERT INTO ${TABLES.CONTENTS} (section_id, type, number_in_work, metadata) 
            VALUES (?, ?, ?, ?)`,
           [
-            contentId,
-            trans.language,
-            trans.text_content,
-            trans.metadata ? JSON.stringify(trans.metadata) : null
+            sectionId,
+            content.type,
+            content.number_in_work || null,
+            content.metadata ? JSON.stringify(content.metadata) : null
           ]
         );
+        contentId = contentResult.lastInsertRowId;
+      }
+
+      // Import translations (Check if translation already exists)
+      for (const trans of content.translations) {
+        const existingTrans = await db.getFirstAsync<{ id: number }>(
+          `SELECT id FROM ${TABLES.CONTENT_TRANSLATIONS} WHERE content_id = ? AND language = ?`,
+          [contentId, trans.language]
+        );
+
+        if (!existingTrans) {
+          await db.runAsync(
+            `INSERT INTO ${TABLES.CONTENT_TRANSLATIONS} (content_id, language, text_content, metadata) 
+             VALUES (?, ?, ?, ?)`,
+            [
+              contentId,
+              trans.language,
+              trans.text_content,
+              trans.metadata ? JSON.stringify(trans.metadata) : null
+            ]
+          );
+        }
       }
 
       // Import commentaries
@@ -158,11 +194,18 @@ export class ContentImportService {
             commAuthorId = author?.id || null;
           }
 
-          await db.runAsync(
-            `INSERT INTO ${TABLES.COMMENTARIES} (content_id, author_id, language, title, text_content) 
-             VALUES (?, ?, ?, ?, ?)`,
-            [contentId, commAuthorId, comm.language, comm.title || null, comm.text_content]
+          const existingComm = await db.getFirstAsync<{ id: number }>(
+            `SELECT id FROM ${TABLES.COMMENTARIES} WHERE content_id = ? AND (author_id = ? OR author_id IS NULL) AND language = ?`,
+            [contentId, commAuthorId, comm.language]
           );
+
+          if (!existingComm) {
+            await db.runAsync(
+              `INSERT INTO ${TABLES.COMMENTARIES} (content_id, author_id, language, title, text_content) 
+               VALUES (?, ?, ?, ?, ?)`,
+              [contentId, commAuthorId, comm.language, comm.title || null, comm.text_content]
+            );
+          }
         }
       }
     }

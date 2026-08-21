@@ -1,7 +1,7 @@
 import { SQLiteDatabase } from 'expo-sqlite';
 import { SCHEMA, TABLES, INDEXES } from './schema';
 
-const DATABASE_VERSION = 4;
+const DATABASE_VERSION = 5;
 
 /**
  * Runs database migrations safely.
@@ -123,6 +123,14 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
       `);
 
       await seedExtraTestContent(db);
+    }
+
+    if (currentVersion < 5) {
+      // Version 5: Kütüb-i Sitte Basic Hadith Data Import
+      // In a real app, this might be a background process or pre-populated DB.
+      // For this task, we assume the data is imported via the script.
+      console.log('Database version 5: Ready for Kütüb-i Sitte data.');
+      await db.execAsync(`INSERT OR REPLACE INTO ${TABLES.METADATA} (key, value) VALUES ('version', '5');`);
     }
 
     console.log('Database migration completed successfully.');

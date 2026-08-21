@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -8,9 +8,10 @@ import {
   TouchableOpacity, 
   Alert,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  ActivityIndicator
 } from 'react-native';
-import { useRouter, Stack } from 'expo-router';
+import { useRouter, Stack, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ResearchService } from '../../database/research';
 
@@ -40,6 +41,8 @@ const VISIBILITIES = [
 
 export default function CreateResearchScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  
   const [title, setTitle] = useState('');
   const [summary, setSummary] = useState('');
   const [body, setBody] = useState('');
@@ -48,6 +51,12 @@ export default function CreateResearchScreen() {
   const [visibility, setVisibility] = useState('private');
   const [tags, setTags] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Pre-fill from params if available
+  useEffect(() => {
+    if (params.prefillTitle) setTitle(params.prefillTitle as string);
+    if (params.prefillCategory) setCategory(params.prefillCategory as string);
+  }, [params]);
 
   const handleSave = async () => {
     if (!title.trim()) {
@@ -59,7 +68,16 @@ export default function CreateResearchScreen() {
       setSaving(true);
       const tagList = tags.split(',').map(t => t.trim()).filter(t => t !== '');
       
-      await ResearchService.createResearch({
+      const sources = [];
+      if (params.sourceId && params.sourceType) {
+        sources.push({
+          sourceId: parseInt(params.sourceId as string, 10),
+          sourceType: params.sourceType as string,
+          note: 'Otomatik bağlanan kaynak'
+        });
+      }
+
+      const researchId = await ResearchService.createResearch({
         title: title.trim(),
         summary: summary.trim(),
         body: body.trim(),
@@ -67,9 +85,12 @@ export default function CreateResearchScreen() {
         status,
         visibility,
         tags: tagList,
+        sources
       });
 
-      router.back();
+      Alert.alert('Başarılı', 'Araştırma kaydedildi.', [
+        { text: 'Tamam', onPress: () => router.replace(`/research/${researchId}`) }
+      ]);
     } catch (error) {
       console.error('Error saving research:', error);
       Alert.alert('Hata', 'Araştırma kaydedilirken bir sorun oluştu.');
@@ -86,6 +107,14 @@ export default function CreateResearchScreen() {
     >
       <Stack.Screen options={{ title: 'Yeni Araştırma', headerTitle: 'Yeni Araştırma' }} />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        
+        {params.sourceId && (
+          <View style={styles.sourceInfo}>
+            <Ionicons name="link-outline" size={16} color="#2196F3" />
+            <Text style={styles.sourceText}>Bu araştırma bir kaynağa otomatik olarak bağlanacaktır.</Text>
+          </View>
+        )}
+
         <View style={styles.section}>
           <Text style={styles.label}>Başlık *</Text>
           <TextInput
@@ -206,9 +235,11 @@ export default function CreateResearchScreen() {
           onPress={handleSave}
           disabled={saving}
         >
-          <Text style={styles.saveButtonText}>
-            {saving ? 'Kaydediliyor...' : 'Araştırmayı Kaydet'}
-          </Text>
+          {saving ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.saveButtonText}>Araştırmayı Kaydet</Text>
+          )}
         </TouchableOpacity>
         
         <View style={{ height: 40 }} />
@@ -224,6 +255,22 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+  },
+  sourceInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E3F2FD',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#BBDEFB',
+  },
+  sourceText: {
+    fontSize: 12,
+    color: '#1976D2',
+    marginLeft: 8,
+    flex: 1,
   },
   section: {
     marginBottom: 20,
