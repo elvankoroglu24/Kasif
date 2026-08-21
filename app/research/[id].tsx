@@ -1,0 +1,352 @@
+import React, { useEffect, useState, useCallback } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  TouchableOpacity, 
+  Alert, 
+  ActivityIndicator,
+  Share
+} from 'react-native';
+import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { ResearchService } from '../../database/research';
+import { Research, Tag, ResearchSource } from '../../database/types';
+
+export default function ResearchDetailScreen() {
+  const { id } = useLocalSearchParams();
+  const router = useRouter();
+  const [research, setResearch] = useState<Research | null>(null);
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [sources, setSources] = useState<ResearchSource[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadData = useCallback(async () => {
+    if (!id) return;
+    try {
+      setLoading(true);
+      const researchId = parseInt(id as string, 10);
+      const data = await ResearchService.getResearchById(researchId);
+      if (data) {
+        setResearch(data);
+        const researchTags = await ResearchService.getResearchTags(researchId);
+        setTags(researchTags);
+        const researchSources = await ResearchService.getResearchSources(researchId);
+        setSources(researchSources);
+      } else {
+        Alert.alert('Hata', 'Araştırma bulunamadı.');
+        router.back();
+      }
+    } catch (error) {
+      console.error('Error loading research details:', error);
+      Alert.alert('Hata', 'Detaylar yüklenirken bir sorun oluştu.');
+    } finally {
+      setLoading(false);
+    }
+  }, [id, router]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Araştırmayı Sil',
+      'Bu araştırmayı silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.',
+      [
+        { text: 'İptal', style: 'cancel' },
+        { 
+          text: 'Sil', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await ResearchService.deleteResearch(parseInt(id as string, 10));
+              router.replace('/research');
+            } catch (error) {
+              console.error('Error deleting research:', error);
+              Alert.alert('Hata', 'Silme işlemi sırasında bir sorun oluştu.');
+            }
+          }
+        },
+      ]
+    );
+  };
+
+  const handleShare = async () => {
+    if (!research) return;
+    try {
+      await Share.share({
+        title: research.title,
+        message: `${research.title}\n\n${research.summary || ''}\n\n${research.body || ''}`,
+      });
+    } catch (error) {
+      console.error('Error sharing:', error);
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color="#2196F3" />
+      </View>
+    );
+  }
+
+  if (!research) return null;
+
+  return (
+    <View style={styles.container}>
+      <Stack.Screen 
+        options={{ 
+          title: 'Araştırma Detayı',
+          headerRight: () => (
+            <View style={styles.headerButtons}>
+              <TouchableOpacity onPress={handleShare} style={styles.headerIcon}>
+                <Ionicons name="share-social-outline" size={24} color="#2196F3" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => router.push(`/research/edit/${id}`)} style={styles.headerIcon}>
+                <Ionicons name="create-outline" size={24} color="#2196F3" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleDelete} style={styles.headerIcon}>
+                <Ionicons name="trash-outline" size={24} color="#f44336" />
+              </TouchableOpacity>
+            </View>
+          ),
+        }} 
+      />
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.header}>
+          <Text style={styles.title}>{research.title}</Text>
+          <View style={styles.metaRow}>
+            <View style={[styles.badge, { backgroundColor: getStatusColor(research.status) }]}>
+              <Text style={styles.badgeText}>{getStatusLabel(research.status)}</Text>
+            </View>
+            <View style={[styles.badge, { backgroundColor: '#E3F2FD' }]}>
+              <Text style={[styles.badgeText, { color: '#2196F3' }]}>{getCategoryLabel(research.category)}</Text>
+            </View>
+            <View style={[styles.badge, { backgroundColor: '#F5F5F5' }]}>
+              <Text style={[styles.badgeText, { color: '#757575' }]}>{getVisibilityLabel(research.visibility)}</Text>
+            </View>
+          </View>
+        </View>
+
+        {research.summary ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Özet</Text>
+            <Text style={styles.summaryText}>{research.summary}</Text>
+          </View>
+        ) : null}
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>İçerik</Text>
+          <Text style={styles.bodyText}>{research.body || 'İçerik bulunmuyor.'}</Text>
+        </View>
+
+        {tags.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Etiketler</Text>
+            <View style={styles.tagContainer}>
+              {tags.map((tag) => (
+                <View key={tag.id} style={styles.tag}>
+                  <Text style={styles.tagText}>#{tag.name}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Kaynaklar</Text>
+          {sources.length > 0 ? (
+            sources.map((source) => (
+              <View key={source.id} style={styles.sourceItem}>
+                <Ionicons name="link-outline" size={18} color="#2196F3" />
+                <Text style={styles.sourceText}>
+                  {getSourceTypeLabel(source.source_type)}: ID {source.source_id}
+                  {source.note ? ` - ${source.note}` : ''}
+                </Text>
+              </View>
+            ))
+          ) : (
+            <Text style={styles.emptyInfoText}>Henüz kaynak eklenmemiş.</Text>
+          )}
+        </View>
+
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>
+            Oluşturulma: {new Date(research.created_at).toLocaleString('tr-TR')}
+          </Text>
+          <Text style={styles.footerText}>
+            Son Güncelleme: {new Date(research.updated_at).toLocaleString('tr-TR')}
+          </Text>
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+const getStatusColor = (status: string) => {
+  switch (status) {
+    case 'draft': return '#FFA000';
+    case 'completed': return '#4CAF50';
+    case 'archived': return '#757575';
+    default: return '#2196F3';
+  }
+};
+
+const getStatusLabel = (status: string) => {
+  switch (status) {
+    case 'draft': return 'Taslak';
+    case 'completed': return 'Tamamlandı';
+    case 'archived': return 'Arşivlendi';
+    default: return status;
+  }
+};
+
+const getCategoryLabel = (category: string) => {
+  const categories: Record<string, string> = {
+    hadith: 'Hadis',
+    commentary: 'Hadis Şerhi',
+    tafsir: 'Tefsir',
+    fiqh: 'Fıkıh',
+    aqidah: 'Akaid',
+    seerah: 'Siyer',
+    arabic: 'Arapça',
+    general: 'Genel',
+    other: 'Diğer',
+  };
+  return categories[category] || category;
+};
+
+const getVisibilityLabel = (visibility: string) => {
+  switch (visibility) {
+    case 'private': return 'Gizli';
+    case 'shared': return 'Paylaşılan';
+    case 'published': return 'Yayınlanan';
+    default: return visibility;
+  }
+};
+
+const getSourceTypeLabel = (type: string) => {
+  switch (type) {
+    case 'content': return 'İçerik/Hadis';
+    case 'work': return 'Eser';
+    case 'section': return 'Bölüm';
+    case 'author': return 'Yazar';
+    case 'edition': return 'Baskı';
+    default: return type;
+  }
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerButtons: {
+    flexDirection: 'row',
+  },
+  headerIcon: {
+    marginLeft: 16,
+  },
+  content: {
+    padding: 20,
+  },
+  header: {
+    marginBottom: 24,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 12,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  badge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  badgeText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  section: {
+    marginBottom: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    paddingBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#555',
+    marginBottom: 12,
+  },
+  summaryText: {
+    fontSize: 16,
+    color: '#666',
+    fontStyle: 'italic',
+    lineHeight: 24,
+  },
+  bodyText: {
+    fontSize: 16,
+    color: '#333',
+    lineHeight: 26,
+  },
+  tagContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  tag: {
+    backgroundColor: '#f0f0f0',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  tagText: {
+    fontSize: 14,
+    color: '#2196F3',
+  },
+  sourceItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  sourceText: {
+    fontSize: 14,
+    color: '#666',
+    marginLeft: 8,
+  },
+  emptyInfoText: {
+    fontSize: 14,
+    color: '#999',
+    fontStyle: 'italic',
+  },
+  footer: {
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    marginBottom: 40,
+  },
+  footerText: {
+    fontSize: 12,
+    color: '#999',
+    marginBottom: 4,
+  },
+});
