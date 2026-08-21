@@ -26,7 +26,8 @@
     "plugins": [
       "expo-router",
       "expo-status-bar",
-      "expo-asset"
+      "expo-asset",
+      "expo-font"
     ],
     "assetBundlePatterns": [
       "**/*"

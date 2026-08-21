@@ -1,76 +1,102 @@
 import * as SQLite from 'expo-sqlite';
-import { Directory, File, Paths } from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Asset } from 'expo-asset';
+import { unzip } from 'react-native-zip-archive';
 import { migrateDbIfNeeded } from './migrations';
 
 const DB_NAME = 'kasif.db';
+const PRELOADED_DB_ASSET_MODULE = require('../assets/database/kasif.db.zip');
 
 let dbInstance: SQLite.SQLiteDatabase | null = null;
+let initializationPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
 /**
- * Pre-populates the database from a zipped asset if it doesn't exist.
- * We use ZIP to stay under GitHub's 100MB limit and reduce APK size.
+ * Copies the preloaded SQLite database from the bundled APK asset on first
+ * launch. Existing databases are never replaced, so user research data is
+ * preserved across app updates.
+ *
+ * The ZIP is extracted natively because the database is large. This avoids
+ * loading a 160+ MB SQLite file into the JavaScript heap.
  */
 async function loadDatabaseAsset(): Promise<void> {
-  const documentDir = Paths.document;
-  if (!documentDir) return;
-  
-  const dbDir = new Directory(documentDir, 'SQLite');
-  const dbFile = new File(dbDir, DB_NAME);
-
-  if (!dbDir.exists) {
-    await dbDir.create();
+  const documentDirectory = FileSystem.documentDirectory;
+  if (!documentDirectory) {
+    throw new Error('Expo document directory is unavailable.');
   }
 
-  if (!dbFile.exists) {
-    console.log('Pre-populated database not found, extracting from assets...');
-    try {
-      // 1. Get the zipped asset
-      const asset = Asset.fromModule(require('../assets/database/kasif.db.zip'));
-      await asset.downloadAsync();
-      
-      if (asset.localUri) {
-        // 2. Unzip the asset to the document directory
-        const zipFile = new File(asset.localUri);
-        await zipFile.unzip(dbDir);
-        
-        console.log('Database successfully extracted from assets.');
-      } else {
-        throw new Error('Asset localUri is null');
-      }
-    } catch (error) {
-      console.error('Failed to extract pre-populated database:', error);
-    }
-  }
-}
+  const databaseDirectory = `${documentDirectory}SQLite`;
+  const databasePath = `${databaseDirectory}/${DB_NAME}`;
+  const existingDatabase = await FileSystem.getInfoAsync(databasePath);
 
-/**
- * Initializes the database and runs migrations.
- * Should be called early in the app lifecycle.
- */
-export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
-  if (dbInstance) return dbInstance;
+  if (existingDatabase.exists) {
+    return;
+  }
+
+  const databaseDirectoryInfo = await FileSystem.getInfoAsync(databaseDirectory);
+  if (!databaseDirectoryInfo.exists) {
+    await FileSystem.makeDirectoryAsync(databaseDirectory, { intermediates: true });
+  }
 
   try {
-    // 1. Ensure pre-populated data is available
-    await loadDatabaseAsset();
+    const asset = Asset.fromModule(PRELOADED_DB_ASSET_MODULE);
+    await asset.downloadAsync();
+    const sourcePath = asset.localUri;
 
-    // 2. Open the database
-    dbInstance = await SQLite.openDatabaseAsync(DB_NAME);
+    if (!sourcePath) {
+      throw new Error('The bundled database asset did not receive a local URI.');
+    }
 
-    // 3. Run migrations for schema updates and user data tables
-    await migrateDbIfNeeded(dbInstance);
-
-    return dbInstance;
+    await unzip(sourcePath, databaseDirectory);
   } catch (error) {
-    console.error('Failed to initialize database:', error);
-    throw error;
+    await removePartialDatabase(databasePath);
+    throw new Error(`Preloaded SQLite asset could not be extracted: ${String(error)}`);
+  }
+
+  const extractedDatabase = await FileSystem.getInfoAsync(databasePath);
+  if (!extractedDatabase.exists) {
+    await removePartialDatabase(databasePath);
+    throw new Error(
+      `Preloaded SQLite asset extraction completed without creating ${databasePath}.`,
+    );
   }
 }
 
+async function removePartialDatabase(databasePath: string): Promise<void> {
+  await Promise.all(
+    [`${databasePath}`, `${databasePath}-wal`, `${databasePath}-shm`].map((path) =>
+      FileSystem.deleteAsync(path, { idempotent: true }),
+    ),
+  );
+}
+
 /**
- * Returns the current database instance.
- * Throws an error if the database has not been initialized.
+ * Initializes the database once and runs non-destructive migrations.
+ * Concurrent callers share the same initialization promise.
+ */
+export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
+  if (dbInstance) {
+    return dbInstance;
+  }
+
+  if (!initializationPromise) {
+    initializationPromise = (async () => {
+      await loadDatabaseAsset();
+      const database = await SQLite.openDatabaseAsync(DB_NAME);
+      await migrateDbIfNeeded(database);
+      dbInstance = database;
+      return database;
+    })().catch((error: unknown) => {
+      initializationPromise = null;
+      console.error('Failed to initialize database:', error);
+      throw error;
+    });
+  }
+
+  return initializationPromise;
+}
+
+/**
+ * Returns the initialized database instance.
  */
 export function getDb(): SQLite.SQLiteDatabase {
   if (!dbInstance) {
