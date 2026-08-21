@@ -1,7 +1,7 @@
 import { SQLiteDatabase } from 'expo-sqlite';
 import { SCHEMA, TABLES, INDEXES } from './schema';
 
-const DATABASE_VERSION = 5;
+const DATABASE_VERSION = 6;
 
 /**
  * Runs database migrations safely.
@@ -127,10 +127,25 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
 
     if (currentVersion < 5) {
       // Version 5: Kütüb-i Sitte Basic Hadith Data Import
-      // In a real app, this might be a background process or pre-populated DB.
-      // For this task, we assume the data is imported via the script.
       console.log('Database version 5: Ready for Kütüb-i Sitte data.');
       await db.execAsync(`INSERT OR REPLACE INTO ${TABLES.METADATA} (key, value) VALUES ('version', '5');`);
+    }
+
+    if (currentVersion < 6) {
+      // Version 6: Pre-populated Database Transition
+      // We don't need to run schema creation here if the DB was copied from assets,
+      // but we ensure triggers are healthy for user data.
+      console.log('Database version 6: Transitioning to pre-populated structure.');
+      await db.execAsync(`
+        -- Ensure all user-facing triggers exist even in pre-populated DB
+        CREATE TRIGGER IF NOT EXISTS tr_commentaries_ai AFTER INSERT ON ${TABLES.COMMENTARIES} BEGIN
+          INSERT INTO ${TABLES.FTS_COMMENTARY}(commentary_id, title, text_content) VALUES (new.id, new.title, new.text_content);
+        END;
+        CREATE TRIGGER IF NOT EXISTS tr_researches_ai AFTER INSERT ON ${TABLES.RESEARCHES} BEGIN
+          INSERT INTO ${TABLES.FTS_RESEARCH}(research_id, title, summary, body) VALUES (new.id, new.title, new.summary, new.body);
+        END;
+        INSERT OR REPLACE INTO ${TABLES.METADATA} (key, value) VALUES ('version', '6');
+      `);
     }
 
     console.log('Database migration completed successfully.');

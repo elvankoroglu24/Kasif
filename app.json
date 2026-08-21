@@ -25,7 +25,11 @@
     },
     "plugins": [
       "expo-router",
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-asset"
+    ],
+    "assetBundlePatterns": [
+      "**/*"
     ],
     "extra": {
       "eas": {
