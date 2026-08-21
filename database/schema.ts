@@ -1,6 +1,7 @@
 /**
  * Database schema definitions for Kasif app.
  * Designed to be extensible for all Islamic content types and personal research infrastructure.
+ * Includes FTS5 support for fast searching across Arabic and Turkish texts.
  */
 
 export const TABLES = {
@@ -18,6 +19,10 @@ export const TABLES = {
   RESEARCH_TAGS: 'research_tags',
   RESEARCH_SOURCES: 'research_sources',
   RESEARCH_RELATIONS: 'research_relations',
+  // FTS5 Virtual Tables
+  FTS_CONTENT: 'fts_content',
+  FTS_COMMENTARY: 'fts_commentary',
+  FTS_RESEARCH: 'fts_research',
 };
 
 export const SCHEMA = {
@@ -173,6 +178,32 @@ export const SCHEMA = {
       PRIMARY KEY (research_id, related_research_id),
       FOREIGN KEY (research_id) REFERENCES ${TABLES.RESEARCHES}(id) ON DELETE CASCADE,
       FOREIGN KEY (related_research_id) REFERENCES ${TABLES.RESEARCHES}(id) ON DELETE CASCADE
+    );
+  `,
+  // FTS5 Virtual Tables
+  [TABLES.FTS_CONTENT]: `
+    CREATE VIRTUAL TABLE IF NOT EXISTS ${TABLES.FTS_CONTENT} USING fts5(
+      content_id UNINDEXED,
+      language,
+      text_content,
+      tokenize = 'unicode61'
+    );
+  `,
+  [TABLES.FTS_COMMENTARY]: `
+    CREATE VIRTUAL TABLE IF NOT EXISTS ${TABLES.FTS_COMMENTARY} USING fts5(
+      commentary_id UNINDEXED,
+      title,
+      text_content,
+      tokenize = 'unicode61'
+    );
+  `,
+  [TABLES.FTS_RESEARCH]: `
+    CREATE VIRTUAL TABLE IF NOT EXISTS ${TABLES.FTS_RESEARCH} USING fts5(
+      research_id UNINDEXED,
+      title,
+      summary,
+      body,
+      tokenize = 'unicode61'
     );
   `,
 };

@@ -136,3 +136,20 @@ export interface ResearchRelation {
   related_research_id: number;
   relation_type: RelationType;
 }
+
+// Search system types
+
+export type SearchResultType = 'content' | 'commentary' | 'research';
+
+export interface SearchResult {
+  id: number;
+  type: SearchResultType;
+  title?: string;
+  snippet: string;
+  language?: string;
+  work_title?: string;
+  author_name?: string;
+  category?: string;
+  rank: number;
+}
+

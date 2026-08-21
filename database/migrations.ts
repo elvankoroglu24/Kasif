@@ -1,7 +1,7 @@
 import { SQLiteDatabase } from 'expo-sqlite';
 import { SCHEMA, TABLES, INDEXES } from './schema';
 
-const DATABASE_VERSION = 3;
+const DATABASE_VERSION = 4;
 
 /**
  * Runs database migrations safely.
@@ -71,6 +71,60 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
       await seedResearchTestData(db);
     }
 
+    if (currentVersion < 4) {
+      // FTS5 Virtual Tables and Triggers
+      await db.execAsync(`
+        ${SCHEMA[TABLES.FTS_CONTENT]}
+        ${SCHEMA[TABLES.FTS_COMMENTARY]}
+        ${SCHEMA[TABLES.FTS_RESEARCH]}
+
+        -- Triggers for content_translations
+        CREATE TRIGGER IF NOT EXISTS tr_content_translations_ai AFTER INSERT ON ${TABLES.CONTENT_TRANSLATIONS} BEGIN
+          INSERT INTO ${TABLES.FTS_CONTENT}(content_id, language, text_content) VALUES (new.content_id, new.language, new.text_content);
+        END;
+        CREATE TRIGGER IF NOT EXISTS tr_content_translations_ad AFTER DELETE ON ${TABLES.CONTENT_TRANSLATIONS} BEGIN
+          DELETE FROM ${TABLES.FTS_CONTENT} WHERE content_id = old.content_id AND language = old.language;
+        END;
+        CREATE TRIGGER IF NOT EXISTS tr_content_translations_au AFTER UPDATE ON ${TABLES.CONTENT_TRANSLATIONS} BEGIN
+          DELETE FROM ${TABLES.FTS_CONTENT} WHERE content_id = old.content_id AND language = old.language;
+          INSERT INTO ${TABLES.FTS_CONTENT}(content_id, language, text_content) VALUES (new.content_id, new.language, new.text_content);
+        END;
+
+        -- Triggers for commentaries
+        CREATE TRIGGER IF NOT EXISTS tr_commentaries_ai AFTER INSERT ON ${TABLES.COMMENTARIES} BEGIN
+          INSERT INTO ${TABLES.FTS_COMMENTARY}(commentary_id, title, text_content) VALUES (new.id, new.title, new.text_content);
+        END;
+        CREATE TRIGGER IF NOT EXISTS tr_commentaries_ad AFTER DELETE ON ${TABLES.COMMENTARIES} BEGIN
+          DELETE FROM ${TABLES.FTS_COMMENTARY} WHERE commentary_id = old.id;
+        END;
+        CREATE TRIGGER IF NOT EXISTS tr_commentaries_au AFTER UPDATE ON ${TABLES.COMMENTARIES} BEGIN
+          DELETE FROM ${TABLES.FTS_COMMENTARY} WHERE commentary_id = old.id;
+          INSERT INTO ${TABLES.FTS_COMMENTARY}(commentary_id, title, text_content) VALUES (new.id, new.title, new.text_content);
+        END;
+
+        -- Triggers for researches
+        CREATE TRIGGER IF NOT EXISTS tr_researches_ai AFTER INSERT ON ${TABLES.RESEARCHES} BEGIN
+          INSERT INTO ${TABLES.FTS_RESEARCH}(research_id, title, summary, body) VALUES (new.id, new.title, new.summary, new.body);
+        END;
+        CREATE TRIGGER IF NOT EXISTS tr_researches_ad AFTER DELETE ON ${TABLES.RESEARCHES} BEGIN
+          DELETE FROM ${TABLES.FTS_RESEARCH} WHERE research_id = old.id;
+        END;
+        CREATE TRIGGER IF NOT EXISTS tr_researches_au AFTER UPDATE ON ${TABLES.RESEARCHES} BEGIN
+          DELETE FROM ${TABLES.FTS_RESEARCH} WHERE research_id = old.id;
+          INSERT INTO ${TABLES.FTS_RESEARCH}(research_id, title, summary, body) VALUES (new.id, new.title, new.summary, new.body);
+        END;
+
+        -- Initial population of FTS tables
+        INSERT INTO ${TABLES.FTS_CONTENT}(content_id, language, text_content) SELECT content_id, language, text_content FROM ${TABLES.CONTENT_TRANSLATIONS};
+        INSERT INTO ${TABLES.FTS_COMMENTARY}(commentary_id, title, text_content) SELECT id, title, text_content FROM ${TABLES.COMMENTARIES};
+        INSERT INTO ${TABLES.FTS_RESEARCH}(research_id, title, summary, body) SELECT id, title, summary, body FROM ${TABLES.RESEARCHES};
+
+        INSERT OR REPLACE INTO ${TABLES.METADATA} (key, value) VALUES ('version', '4');
+      `);
+
+      await seedExtraTestContent(db);
+    }
+
     console.log('Database migration completed successfully.');
   } catch (error) {
     console.error('Error during database migration:', error);
@@ -131,5 +185,38 @@ async function seedResearchTestData(db: SQLiteDatabase) {
     console.log('Research test data seeded successfully.');
   } catch (error) {
     console.warn('Research seed data failed (non-critical):', error);
+  }
+}
+
+/**
+ * Seeds additional test content for various types (Ayah, Dhikr, etc.)
+ */
+async function seedExtraTestContent(db: SQLiteDatabase) {
+  try {
+    console.log('Seeding extra test content...');
+
+    // Check if we already have test ayah
+    const ayahCheck = await db.getFirstAsync(`SELECT id FROM ${TABLES.CONTENTS} WHERE type = 'ayah' LIMIT 1`);
+    if (ayahCheck) return;
+
+    await db.execAsync(`
+      -- TEST QURAN DATA
+      INSERT INTO ${TABLES.WORKS} (title, type, language) VALUES ('TEST QURAN', 'ayah', 'ar');
+      INSERT INTO ${TABLES.SECTIONS} (work_id, title, number, type, metadata) VALUES (2, 'TEST SURAH', 1, 'surah', '{"revelation_place": "Mecca"}');
+      INSERT INTO ${TABLES.CONTENTS} (section_id, type, number_in_work, metadata) VALUES (2, 'ayah', '1', '{"page": 1, "juz": 1}');
+      INSERT INTO ${TABLES.CONTENT_TRANSLATIONS} (content_id, language, text_content) VALUES (2, 'ar', 'TEST ARABIC AYAH');
+      INSERT INTO ${TABLES.CONTENT_TRANSLATIONS} (content_id, language, text_content) VALUES (2, 'tr', 'TEST TÜRKÇE MEAL');
+
+      -- TEST DHIKR DATA
+      INSERT INTO ${TABLES.WORKS} (title, type, language) VALUES ('TEST DHIKR BOOK', 'dhikr', 'ar');
+      INSERT INTO ${TABLES.SECTIONS} (work_id, title, number, type) VALUES (3, 'TEST DHIKR SECTION', 1, 'chapter');
+      INSERT INTO ${TABLES.CONTENTS} (section_id, type, number_in_work, metadata) VALUES (3, 'dhikr', '1', '{"target_count": 33}');
+      INSERT INTO ${TABLES.CONTENT_TRANSLATIONS} (content_id, language, text_content) VALUES (3, 'ar', 'TEST ARABIC DHIKR');
+      INSERT INTO ${TABLES.CONTENT_TRANSLATIONS} (content_id, language, text_content) VALUES (3, 'tr', 'TEST TÜRKÇE ZİKİR ANLAMI');
+    `);
+
+    console.log('Extra test content seeded successfully.');
+  } catch (error) {
+    console.warn('Extra seed data failed (non-critical):', error);
   }
 }
