@@ -49,6 +49,8 @@ export const TABLES = {
   PERSONAL_VOCABULARY_TAGS: 'personal_vocabulary_tags',
   PERSONAL_VOCABULARY_WORD_TAGS: 'personal_vocabulary_word_tags',
   FTS_PERSONAL_VOCABULARY: 'fts_personal_vocabulary',
+  PERSONAL_VOCABULARY_REVIEWS: 'personal_vocabulary_reviews',
+  PERSONAL_VOCABULARY_REVIEW_EVENTS: 'personal_vocabulary_review_events',
 };
 
 export const SCHEMA = {
@@ -562,6 +564,33 @@ export const SCHEMA = {
       tokenize = 'unicode61'
     );
   `,
+  [TABLES.PERSONAL_VOCABULARY_REVIEWS]: `
+    CREATE TABLE IF NOT EXISTS ${TABLES.PERSONAL_VOCABULARY_REVIEWS} (
+      word_id INTEGER PRIMARY KEY,
+      review_count INTEGER NOT NULL DEFAULT 0 CHECK (review_count >= 0),
+      correct_count INTEGER NOT NULL DEFAULT 0 CHECK (correct_count >= 0),
+      incorrect_count INTEGER NOT NULL DEFAULT 0 CHECK (incorrect_count >= 0),
+      current_streak INTEGER NOT NULL DEFAULT 0 CHECK (current_streak >= 0),
+      ease REAL NOT NULL DEFAULT 2.5 CHECK (ease >= 1.3),
+      difficulty REAL NOT NULL DEFAULT 0 CHECK (difficulty >= 0 AND difficulty <= 1),
+      last_reviewed_at DATETIME,
+      next_review_at DATETIME,
+      last_streak_day TEXT,
+      learning_state TEXT NOT NULL DEFAULT 'new',
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (word_id) REFERENCES ${TABLES.PERSONAL_VOCABULARY_WORDS}(id) ON DELETE CASCADE
+    );
+  `,
+  [TABLES.PERSONAL_VOCABULARY_REVIEW_EVENTS]: `
+    CREATE TABLE IF NOT EXISTS ${TABLES.PERSONAL_VOCABULARY_REVIEW_EVENTS} (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      word_id INTEGER NOT NULL,
+      rating TEXT NOT NULL,
+      was_correct INTEGER NOT NULL CHECK (was_correct IN (0, 1)),
+      reviewed_at DATETIME NOT NULL,
+      FOREIGN KEY (word_id) REFERENCES ${TABLES.PERSONAL_VOCABULARY_WORDS}(id) ON DELETE CASCADE
+    );
+  `,
 };
 
 // Index definitions for performance
@@ -603,4 +632,8 @@ export const INDEXES = [
   `CREATE INDEX IF NOT EXISTS idx_vocabulary_words_favorite ON ${TABLES.PERSONAL_VOCABULARY_WORDS}(is_favorite, updated_at);`,
   `CREATE INDEX IF NOT EXISTS idx_vocabulary_examples_word ON ${TABLES.PERSONAL_VOCABULARY_EXAMPLES}(word_id, id);`,
   `CREATE INDEX IF NOT EXISTS idx_vocabulary_word_tags_tag ON ${TABLES.PERSONAL_VOCABULARY_WORD_TAGS}(tag_id, word_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_vocabulary_reviews_next ON ${TABLES.PERSONAL_VOCABULARY_REVIEWS}(next_review_at, learning_state);`,
+  `CREATE INDEX IF NOT EXISTS idx_vocabulary_reviews_state ON ${TABLES.PERSONAL_VOCABULARY_REVIEWS}(learning_state, updated_at);`,
+  `CREATE INDEX IF NOT EXISTS idx_vocabulary_review_events_date ON ${TABLES.PERSONAL_VOCABULARY_REVIEW_EVENTS}(reviewed_at, was_correct);`,
+  `CREATE INDEX IF NOT EXISTS idx_vocabulary_review_events_word ON ${TABLES.PERSONAL_VOCABULARY_REVIEW_EVENTS}(word_id, reviewed_at);`,
 ];

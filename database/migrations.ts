@@ -1,7 +1,7 @@
 import { SQLiteDatabase } from 'expo-sqlite';
 import { SCHEMA, TABLES, INDEXES } from './schema';
 
-export const DATABASE_VERSION = 13;
+export const DATABASE_VERSION = 14;
 
 const SEARCH_TRIGGERS_SQL = `
   CREATE TRIGGER IF NOT EXISTS tr_content_translations_ai AFTER INSERT ON ${TABLES.CONTENT_TRANSLATIONS} BEGIN
@@ -223,6 +223,14 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
       `);
     }
 
+    if (currentVersion < 14) {
+      await ensureFullSchemaAndSearchTriggers(db);
+      await db.execAsync(`
+        INSERT OR REPLACE INTO ${TABLES.METADATA} (key, value) VALUES ('version', '14');
+        PRAGMA user_version = 14;
+      `);
+    }
+
     await ensureFullSchemaAndSearchTriggers(db);
     console.log('Database migration completed successfully.');
   } catch (error) {
@@ -275,6 +283,8 @@ async function ensureFullSchemaAndSearchTriggers(db: SQLiteDatabase): Promise<vo
     ${SCHEMA[TABLES.PERSONAL_VOCABULARY_TAGS]}
     ${SCHEMA[TABLES.PERSONAL_VOCABULARY_WORD_TAGS]}
     ${SCHEMA[TABLES.FTS_PERSONAL_VOCABULARY]}
+    ${SCHEMA[TABLES.PERSONAL_VOCABULARY_REVIEWS]}
+    ${SCHEMA[TABLES.PERSONAL_VOCABULARY_REVIEW_EVENTS]}
     ${INDEXES.join('\\n')}
     ${SEARCH_TRIGGERS_SQL}
   `);
