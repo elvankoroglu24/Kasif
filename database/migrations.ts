@@ -1,7 +1,7 @@
 import { SQLiteDatabase } from 'expo-sqlite';
 import { SCHEMA, TABLES, INDEXES } from './schema';
 
-export const DATABASE_VERSION = 8;
+export const DATABASE_VERSION = 13;
 
 const SEARCH_TRIGGERS_SQL = `
   CREATE TRIGGER IF NOT EXISTS tr_content_translations_ai AFTER INSERT ON ${TABLES.CONTENT_TRANSLATIONS} BEGIN
@@ -44,6 +44,19 @@ const SEARCH_TRIGGERS_SQL = `
     INSERT INTO ${TABLES.FTS_RESEARCH}(research_id, title, summary, body)
     VALUES (new.id, new.title, new.summary, new.body);
   END;
+
+  CREATE TRIGGER IF NOT EXISTS tr_vocabulary_words_ai AFTER INSERT ON ${TABLES.PERSONAL_VOCABULARY_WORDS} BEGIN
+    INSERT INTO ${TABLES.FTS_PERSONAL_VOCABULARY}(word_id, arabic, arabic_normalized, arabic_transliteration, turkish, english, german, root, personal_note)
+    VALUES (new.id, COALESCE(new.arabic, ''), COALESCE(new.arabic_normalized, ''), COALESCE(new.arabic_transliteration, ''), COALESCE(new.turkish, ''), COALESCE(new.english, ''), COALESCE(new.german, ''), COALESCE(new.root, ''), COALESCE(new.personal_note, ''));
+  END;
+  CREATE TRIGGER IF NOT EXISTS tr_vocabulary_words_ad AFTER DELETE ON ${TABLES.PERSONAL_VOCABULARY_WORDS} BEGIN
+    DELETE FROM ${TABLES.FTS_PERSONAL_VOCABULARY} WHERE word_id = old.id;
+  END;
+  CREATE TRIGGER IF NOT EXISTS tr_vocabulary_words_au AFTER UPDATE ON ${TABLES.PERSONAL_VOCABULARY_WORDS} BEGIN
+    DELETE FROM ${TABLES.FTS_PERSONAL_VOCABULARY} WHERE word_id = old.id;
+    INSERT INTO ${TABLES.FTS_PERSONAL_VOCABULARY}(word_id, arabic, arabic_normalized, arabic_transliteration, turkish, english, german, root, personal_note)
+    VALUES (new.id, COALESCE(new.arabic, ''), COALESCE(new.arabic_normalized, ''), COALESCE(new.arabic_transliteration, ''), COALESCE(new.turkish, ''), COALESCE(new.english, ''), COALESCE(new.german, ''), COALESCE(new.root, ''), COALESCE(new.personal_note, ''));
+  END;
 `;
 
 /**
@@ -51,6 +64,8 @@ const SEARCH_TRIGGERS_SQL = `
  *
  * Version 8 adds the user-owned favorites table without changing static content
  * or rebuilding the preloaded hadith and FTS5 data.
+ * Version 9 adds empty Quran structure, local reading progress, Quran markers,
+ * and dhikr content/progress tables without seeding religious content.
  */
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
   try {
@@ -168,6 +183,46 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
       `);
     }
 
+    if (currentVersion < 9) {
+      await ensureFullSchemaAndSearchTriggers(db);
+      await db.execAsync(`
+        INSERT OR REPLACE INTO ${TABLES.METADATA} (key, value) VALUES ('version', '9');
+        PRAGMA user_version = 9;
+      `);
+    }
+
+    if (currentVersion < 10) {
+      await ensureFullSchemaAndSearchTriggers(db);
+      await db.execAsync(`
+        INSERT OR REPLACE INTO ${TABLES.METADATA} (key, value) VALUES ('version', '10');
+        PRAGMA user_version = 10;
+      `);
+    }
+
+    if (currentVersion < 11) {
+      await ensureFullSchemaAndSearchTriggers(db);
+      await db.execAsync(`
+        INSERT OR REPLACE INTO ${TABLES.METADATA} (key, value) VALUES ('version', '11');
+        PRAGMA user_version = 11;
+      `);
+    }
+
+    if (currentVersion < 12) {
+      await ensureFullSchemaAndSearchTriggers(db);
+      await db.execAsync(`
+        INSERT OR REPLACE INTO ${TABLES.METADATA} (key, value) VALUES ('version', '12');
+        PRAGMA user_version = 12;
+      `);
+    }
+
+    if (currentVersion < 13) {
+      await ensureFullSchemaAndSearchTriggers(db);
+      await db.execAsync(`
+        INSERT OR REPLACE INTO ${TABLES.METADATA} (key, value) VALUES ('version', '13');
+        PRAGMA user_version = 13;
+      `);
+    }
+
     await ensureFullSchemaAndSearchTriggers(db);
     console.log('Database migration completed successfully.');
   } catch (error) {
@@ -192,12 +247,47 @@ async function ensureFullSchemaAndSearchTriggers(db: SQLiteDatabase): Promise<vo
     ${SCHEMA[TABLES.RESEARCH_SOURCES]}
     ${SCHEMA[TABLES.RESEARCH_RELATIONS]}
     ${SCHEMA[TABLES.FAVORITES]}
+    ${SCHEMA[TABLES.QURAN_SURAHS]}
+    ${SCHEMA[TABLES.QURAN_PAGES]}
+    ${SCHEMA[TABLES.QURAN_LINES]}
+    ${SCHEMA[TABLES.QURAN_AYAHS]}
+    ${SCHEMA[TABLES.QURAN_WORDS]}
+    ${SCHEMA[TABLES.QURAN_WORD_MEANINGS]}
+    ${SCHEMA[TABLES.QURAN_MARKERS]}
+    ${SCHEMA[TABLES.READING_PROGRESS]}
+    ${SCHEMA[TABLES.DHIKR_GROUPS]}
+    ${SCHEMA[TABLES.DHIKRS]}
+    ${SCHEMA[TABLES.DHIKR_PROGRESS]}
+    ${SCHEMA[TABLES.PERSONAL_BOOKS]}
+    ${SCHEMA[TABLES.PERSONAL_BOOK_CHAPTERS]}
+    ${SCHEMA[TABLES.PERSONAL_BOOK_PARAGRAPHS]}
+    ${SCHEMA[TABLES.PERSONAL_BOOK_PROGRESS]}
+    ${SCHEMA[TABLES.PERSONAL_BOOK_BOOKMARKS]}
+    ${SCHEMA[TABLES.PERSONAL_BOOK_NOTES]}
+    ${SCHEMA[TABLES.PERSONAL_BOOK_HIGHLIGHTS]}
+    ${SCHEMA[TABLES.PERSONAL_BOOK_IMPORT_EVENTS]}
     ${SCHEMA[TABLES.FTS_CONTENT]}
     ${SCHEMA[TABLES.FTS_COMMENTARY]}
     ${SCHEMA[TABLES.FTS_RESEARCH]}
-    ${INDEXES.join('\n')}
+    ${SCHEMA[TABLES.FTS_PERSONAL_BOOKS]}
+    ${SCHEMA[TABLES.PERSONAL_VOCABULARY_WORDS]}
+    ${SCHEMA[TABLES.PERSONAL_VOCABULARY_EXAMPLES]}
+    ${SCHEMA[TABLES.PERSONAL_VOCABULARY_TAGS]}
+    ${SCHEMA[TABLES.PERSONAL_VOCABULARY_WORD_TAGS]}
+    ${SCHEMA[TABLES.FTS_PERSONAL_VOCABULARY]}
+    ${INDEXES.join('\\n')}
     ${SEARCH_TRIGGERS_SQL}
   `);
+  await ensurePersonalBookExtensions(db);
+}
+
+async function ensurePersonalBookExtensions(db: SQLiteDatabase): Promise<void> {
+  const columns = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${TABLES.PERSONAL_BOOKS})`);
+  const existing = new Set(columns.map((column) => column.name));
+  if (!existing.has('import_status')) await db.execAsync(`ALTER TABLE ${TABLES.PERSONAL_BOOKS} ADD COLUMN import_status TEXT NOT NULL DEFAULT 'stored';`);
+  if (!existing.has('last_error')) await db.execAsync(`ALTER TABLE ${TABLES.PERSONAL_BOOKS} ADD COLUMN last_error TEXT;`);
+  if (!existing.has('last_read_at')) await db.execAsync(`ALTER TABLE ${TABLES.PERSONAL_BOOKS} ADD COLUMN last_read_at DATETIME;`);
+  if (!existing.has('cover_file_path')) await db.execAsync(`ALTER TABLE ${TABLES.PERSONAL_BOOKS} ADD COLUMN cover_file_path TEXT;`);
 }
 
 async function rebuildFtsIndexes(db: SQLiteDatabase): Promise<void> {
