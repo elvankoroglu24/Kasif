@@ -1,5 +1,6 @@
 import { Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
+import { AppPreferencesProvider } from '../contexts/AppPreferencesContext';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { initDatabase } from '../database';
 
@@ -44,9 +45,11 @@ export default function RootLayout() {
   }
 
   return (
-    <Stack>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-    </Stack>
+    <AppPreferencesProvider>
+      <Stack>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      </Stack>
+    </AppPreferencesProvider>
   );
 }
 
