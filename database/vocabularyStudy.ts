@@ -17,7 +17,10 @@ const MAX_SESSION = 50;
 const number = (value: unknown) => Number(value ?? 0);
 const string = (value: unknown): string | null => value == null ? null : String(value);
 const iso = (date: Date) => date.toISOString();
-const dayKey = (date: Date) => date.toISOString().slice(0, 10);
+const pad = (value: number) => String(value).padStart(2, '0');
+const dayKey = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+const localDayStart = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+const localNextDayStart = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
 
 export const REVIEW_INTERVALS_MINUTES: Record<ReviewRating, number[]> = { again: [5, 10, 30], hard: [15, 60, 240], good: [60, 1440, 4320, 10080, 20160, 43200], easy: [1440, 4320, 10080, 20160, 43200, 86400] };
 
@@ -27,9 +30,8 @@ export function calculateNextReview(state: ReviewState, rating: ReviewRating, no
   const ease = Math.max(1.3, Math.min(3.2, Math.round((state.ease + easeDelta) * 100) / 100));
   const difficulty = Math.max(0, Math.min(1, Math.round((1 - (ease - 1.3) / 1.9) * 100) / 100));
   const today = dayKey(now);
-  const previousDay = state.lastStreakDay ? new Date(`${state.lastStreakDay}T00:00:00.000Z`) : null;
-  const yesterday = new Date(now.getTime() - 86_400_000);
-  const streak = !correct ? 0 : state.lastStreakDay === today ? state.currentStreak : previousDay && dayKey(previousDay) === dayKey(yesterday) ? state.currentStreak + 1 : 1;
+  const yesterdayKey = dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+  const streak = !correct ? 0 : state.lastStreakDay === today ? state.currentStreak : state.lastStreakDay === yesterdayKey ? state.currentStreak + 1 : 1;
   const previousState = state.learningState;
   const learningState: LearningState = rating === 'again' ? 'learning' : reviewCount >= 5 && streak >= 3 && rating !== 'hard' ? 'mastered' : previousState === 'new' ? 'learning' : reviewCount >= 3 ? 'review' : 'learning';
   const intervals = REVIEW_INTERVALS_MINUTES[rating]; const index = Math.min(intervals.length - 1, Math.max(0, reviewCount - 1));
@@ -48,15 +50,15 @@ function mapWordBase(row: Row): VocabularyWord { return { id: number(row.id), st
 
 export const VocabularyStudyService = {
   async getStats(now = new Date()): Promise<StudyStats> {
-    const db = getDb(); const today = dayKey(now);
-    const row = await db.getFirstAsync<Row>(`SELECT COUNT(*) AS total, SUM(CASE WHEN COALESCE(r.review_count, 0) = 0 THEN 1 ELSE 0 END) AS new_count, SUM(CASE WHEN r.learning_state = 'learning' THEN 1 ELSE 0 END) AS learning_count, SUM(CASE WHEN r.learning_state = 'review' THEN 1 ELSE 0 END) AS review_count, SUM(CASE WHEN r.learning_state = 'mastered' THEN 1 ELSE 0 END) AS mastered_count, SUM(CASE WHEN r.next_review_at IS NOT NULL AND r.next_review_at <= ? THEN 1 ELSE 0 END) AS due_count, SUM(CASE WHEN r.last_streak_day = ? THEN r.current_streak ELSE 0 END) AS streak FROM ${TABLES.PERSONAL_VOCABULARY_WORDS} w LEFT JOIN ${TABLES.PERSONAL_VOCABULARY_REVIEWS} r ON r.word_id = w.id`, [iso(now), today]);
-    const todayRow = await db.getFirstAsync<Row>(`SELECT COUNT(*) AS reviewed_today, SUM(was_correct) AS correct_today FROM ${TABLES.PERSONAL_VOCABULARY_REVIEW_EVENTS} WHERE substr(reviewed_at, 1, 10) = ?`, [today]);
+    const db = getDb(); const today = dayKey(now); const start = iso(localDayStart(now)); const end = iso(localNextDayStart(now));
+    const row = await db.getFirstAsync<Row>(`SELECT COUNT(*) AS total, SUM(CASE WHEN COALESCE(r.review_count, 0) = 0 THEN 1 ELSE 0 END) AS new_count, SUM(CASE WHEN r.learning_state = 'learning' THEN 1 ELSE 0 END) AS learning_count, SUM(CASE WHEN r.learning_state = 'review' THEN 1 ELSE 0 END) AS review_count, SUM(CASE WHEN r.learning_state = 'mastered' THEN 1 ELSE 0 END) AS mastered_count, SUM(CASE WHEN r.next_review_at IS NOT NULL AND r.next_review_at <= ? THEN 1 ELSE 0 END) AS due_count, MAX(CASE WHEN r.last_streak_day = ? THEN r.current_streak ELSE 0 END) AS streak FROM ${TABLES.PERSONAL_VOCABULARY_WORDS} w LEFT JOIN ${TABLES.PERSONAL_VOCABULARY_REVIEWS} r ON r.word_id = w.id`, [iso(now), today]);
+    const todayRow = await db.getFirstAsync<Row>(`SELECT COUNT(*) AS reviewed_today, SUM(was_correct) AS correct_today FROM ${TABLES.PERSONAL_VOCABULARY_REVIEW_EVENTS} WHERE reviewed_at >= ? AND reviewed_at < ?`, [start, end]);
     const totalReviews = number(todayRow?.reviewed_today); const correctToday = number(todayRow?.correct_today); return { total: number(row?.total), newCount: number(row?.new_count), learningCount: number(row?.learning_count), reviewCount: number(row?.review_count), masteredCount: number(row?.mastered_count), dueCount: number(row?.due_count), reviewedToday: totalReviews, correctToday, streak: number(row?.streak), accuracy: totalReviews ? Math.round((correctToday / totalReviews) * 100) : 0 };
   },
   async getStudyWords(query: StudyQuery, now = new Date()): Promise<VocabularyWord[]> {
     const db = getDb(); const direction = directionCondition(query.direction); const where: string[] = [direction.sql]; const params: Array<string | number> = [...direction.params]; const limit = Math.min(MAX_SESSION, Math.max(1, query.limit));
     if (query.filter === 'favorites') where.push('w.is_favorite = 1'); if (query.filter === 'new') where.push('COALESCE(r.review_count, 0) = 0'); if (query.filter === 'due') where.push('r.next_review_at IS NOT NULL AND r.next_review_at <= ?'), params.push(iso(now)); if (query.filter === 'hard') where.push('COALESCE(r.difficulty, 0) >= 0.55'); if (query.filter === 'learned') where.push("r.learning_state IN ('review', 'mastered')"); if (query.wordType) where.push('w.word_type = ?'), params.push(query.wordType); if (query.tag) where.push(`EXISTS (SELECT 1 FROM ${TABLES.PERSONAL_VOCABULARY_WORD_TAGS} wt JOIN ${TABLES.PERSONAL_VOCABULARY_TAGS} t ON t.id = wt.tag_id WHERE wt.word_id = w.id AND t.name = ?)`), params.push(query.tag);
-    const rows = await db.getAllAsync<Row>(`SELECT w.* FROM ${TABLES.PERSONAL_VOCABULARY_WORDS} w LEFT JOIN ${TABLES.PERSONAL_VOCABULARY_REVIEWS} r ON r.word_id = w.id WHERE ${where.join(' AND ')} ORDER BY CASE WHEN r.next_review_at IS NOT NULL AND r.next_review_at <= ? THEN 0 WHEN COALESCE(r.review_count, 0) = 0 THEN 1 ELSE 2 END, COALESCE(r.next_review_at, '9999-12-31') ASC, w.id ASC LIMIT ?`, [...params, iso(now), limit]);
+    const rows = await db.getAllAsync<Row>(`SELECT w.* FROM ${TABLES.PERSONAL_VOCABULARY_WORDS} w LEFT JOIN ${TABLES.PERSONAL_VOCABULARY_REVIEWS} r ON r.word_id = w.id WHERE ${where.join(' AND ')} ORDER BY CASE WHEN r.next_review_at IS NOT NULL AND r.next_review_at <= ? THEN 0 WHEN r.learning_state IN ('learning', 'review') THEN 1 WHEN COALESCE(r.review_count, 0) = 0 THEN 2 ELSE 3 END, COALESCE(r.next_review_at, '9999-12-31') ASC, w.id ASC LIMIT ?`, [...params, iso(now), limit]);
     return rows.map(mapWordBase);
   },
   async getState(wordId: number): Promise<ReviewState> { const row = await getDb().getFirstAsync<Row>(`SELECT * FROM ${TABLES.PERSONAL_VOCABULARY_REVIEWS} WHERE word_id = ?`, [wordId]); return row ? mapState(row) : emptyState(wordId); },
