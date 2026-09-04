@@ -285,7 +285,7 @@ async function ensureFullSchemaAndSearchTriggers(db: SQLiteDatabase): Promise<vo
     ${SCHEMA[TABLES.FTS_PERSONAL_VOCABULARY]}
     ${SCHEMA[TABLES.PERSONAL_VOCABULARY_REVIEWS]}
     ${SCHEMA[TABLES.PERSONAL_VOCABULARY_REVIEW_EVENTS]}
-    ${INDEXES.join('\\n')}
+    ${INDEXES.join('\n')}
     ${SEARCH_TRIGGERS_SQL}
   `);
   await ensurePersonalBookExtensions(db);
