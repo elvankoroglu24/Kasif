@@ -30,37 +30,47 @@ export const ContentService = {
       [id]
     );
 
-    // 3. Get commentaries with author and work info
-    const commentaries = await db.getAllAsync<any>(
-      `SELECT c.*, a.name as author_name, w.title as work_title
-       FROM ${TABLES.COMMENTARIES} c
-       LEFT JOIN ${TABLES.AUTHORS} a ON c.author_id = a.id
-       LEFT JOIN ${TABLES.EDITIONS} e ON c.edition_id = e.id
-       LEFT JOIN ${TABLES.WORKS} w ON e.work_id = w.id
-       WHERE c.content_id = ?`,
-      [id]
-    );
+    // Commentaries and source metadata are optional enrichments. Keep the
+    // base hadith readable even when an older local DB lacks an optional table.
+    let commentaries: (Commentary & { author_name?: string; work_title?: string })[] = [];
+    try {
+      commentaries = await db.getAllAsync<any>(
+        `SELECT c.*, a.name as author_name, w.title as work_title
+         FROM ${TABLES.COMMENTARIES} c
+         LEFT JOIN ${TABLES.AUTHORS} a ON c.author_id = a.id
+         LEFT JOIN ${TABLES.EDITIONS} e ON c.edition_id = e.id
+         LEFT JOIN ${TABLES.WORKS} w ON e.work_id = w.id
+         WHERE c.content_id = ?`,
+        [id]
+      );
+    } catch (error) {
+      console.warn('Optional commentary data could not be loaded:', error);
+    }
 
-    // 4. Get section and work info
+    // Section and work information are also optional display metadata.
     let section: Section | undefined;
     let work: (Work & { author_name?: string }) | undefined;
 
-    if (content.section_id) {
-      const sectionResult = await db.getFirstAsync<Section>(
-        `SELECT * FROM ${TABLES.SECTIONS} WHERE id = ?`,
-        [content.section_id]
-      );
-      section = sectionResult || undefined;
-
-      if (section) {
-        work = await db.getFirstAsync<any>(
-          `SELECT w.*, a.name as author_name
-           FROM ${TABLES.WORKS} w
-           LEFT JOIN ${TABLES.AUTHORS} a ON w.author_id = a.id
-           WHERE w.id = ?`,
-          [section.work_id]
+    try {
+      if (content.section_id) {
+        const sectionResult = await db.getFirstAsync<Section>(
+          `SELECT * FROM ${TABLES.SECTIONS} WHERE id = ?`,
+          [content.section_id]
         );
+        section = sectionResult || undefined;
+
+        if (section) {
+          work = await db.getFirstAsync<any>(
+            `SELECT w.*, a.name as author_name
+             FROM ${TABLES.WORKS} w
+             LEFT JOIN ${TABLES.AUTHORS} a ON w.author_id = a.id
+             WHERE w.id = ?`,
+            [section.work_id]
+          );
+        }
       }
+    } catch (error) {
+      console.warn('Optional source metadata could not be loaded:', error);
     }
 
     return {

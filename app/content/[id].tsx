@@ -21,7 +21,7 @@ import { Research } from '../../database/types';
 import { displaySectionTitle } from '../../utils/sectionTitle';
 
 export default function ContentDetailScreen() {
-  const { id, type } = useLocalSearchParams();
+  const { id } = useLocalSearchParams<{ id?: string }>();
   const router = useRouter();
   const [content, setContent] = useState<ContentDetail | null>(null);
   const [linkedResearches, setLinkedResearches] = useState<Research[]>([]);
@@ -32,14 +32,30 @@ export default function ContentDetailScreen() {
     if (!id) return;
     try {
       setLoading(true);
-      const contentId = parseInt(id as string, 10);
+      const contentId = Number.parseInt(id, 10);
+      if (!Number.isSafeInteger(contentId) || contentId <= 0) {
+        throw new Error('Geçersiz içerik kimliği.');
+      }
+
       const detail = await ContentService.getContentDetail(contentId);
       if (detail) {
         setContent(detail);
-        setIsFavorite(await FavoritesService.isFavorite(contentId));
-        // Load linked researches
-        const researches = await ResearchService.getResearchesBySource('content', contentId);
-        setLinkedResearches(researches);
+
+        // Optional user-owned data must not prevent the hadith itself from opening.
+        try {
+          setIsFavorite(await FavoritesService.isFavorite(contentId));
+        } catch (error) {
+          console.warn('Favori durumu okunamadı:', error);
+          setIsFavorite(false);
+        }
+
+        try {
+          const researches = await ResearchService.getResearchesBySource('content', contentId);
+          setLinkedResearches(researches);
+        } catch (error) {
+          console.warn('Bağlı araştırmalar okunamadı:', error);
+          setLinkedResearches([]);
+        }
       } else {
         Alert.alert('Hata', 'İçerik bulunamadı.');
         router.back();
@@ -125,7 +141,7 @@ export default function ContentDetailScreen() {
 
   if (!content) return null;
 
-  const metadata = content.metadata ? JSON.parse(content.metadata) : {};
+  const metadata = parseMetadata(content.metadata);
 
   return (
     <View style={styles.container}>
@@ -274,6 +290,18 @@ export default function ContentDetailScreen() {
       </ScrollView>
     </View>
   );
+}
+
+function parseMetadata(metadata?: string | null): Record<string, any> {
+  if (!metadata) return {};
+  try {
+    const parsed: unknown = JSON.parse(metadata);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, any>)
+      : {};
+  } catch {
+    return {};
+  }
 }
 
 function getTitleByType(type: string) {

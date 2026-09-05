@@ -57,14 +57,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="repeat-outline" size={size} color={color} />,
         }}
       />
-      <Tabs.Screen
-        name="research/index"
-        options={{
-          title: 'Araştırmalarım',
-          headerTitle: 'Araştırmalarım',
-          tabBarIcon: ({ color, size }) => <Ionicons name="flask-outline" size={size} color={color} />,
-        }}
-      />
+      <Tabs.Screen name="research" options={{ href: null, title: 'Araştırmalarım', headerTitle: 'Araştırmalarım' }} />
       <Tabs.Screen
         name="vocabulary"
         options={{
