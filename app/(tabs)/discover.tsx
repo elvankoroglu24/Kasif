@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getDb } from '../../database';
 import { TABLES } from '../../database/schema';
 import { useAppPreferences } from '../../contexts/AppPreferencesContext';
@@ -11,6 +12,7 @@ type DiscoverItem = { id: number; numberInWork: string; workTitle: string; autho
 export default function DiscoverScreen() {
   const router = useRouter();
   const { tokens, scaleText, densitySpacing } = useAppPreferences();
+  const insets = useSafeAreaInsets();
   const [items, setItems] = useState<DiscoverItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -46,9 +48,9 @@ export default function DiscoverScreen() {
 
   return (
     <View style={[styles.screen, { backgroundColor: tokens.background }]}>
-      <View style={[styles.intro, { backgroundColor: tokens.surfaceSecondary, borderColor: tokens.border }]}>
+      <View style={[styles.intro, { backgroundColor: tokens.surfaceSecondary, borderColor: tokens.border, marginTop: insets.top + 16 }]}>
         <View style={[styles.introIcon, { backgroundColor: tokens.selected }]}><Ionicons name="compass-outline" size={25} color={tokens.primary} /></View>
-        <View style={styles.introCopy}><Text style={[styles.title, { color: tokens.text, fontSize: scaleText(19) }]}>Keşfet</Text><Text style={[styles.subtitle, { color: tokens.textSecondary, fontSize: scaleText(13) }]}>Cihazınızdaki mevcut içeriklere göz atın.</Text></View>
+        <View style={styles.introCopy}><Text style={[styles.title, { color: tokens.text, fontSize: scaleText(19) }]}>Hadisler</Text><Text style={[styles.subtitle, { color: tokens.textSecondary, fontSize: scaleText(13) }]}>Cihazınızdaki gerçek yerel hadis kayıtları.</Text></View>
       </View>
       {loading ? <ActivityIndicator style={styles.center} color={tokens.primary} /> : error ? <State icon="alert-circle-outline" title="İçerik okunamadı" message={error} tokens={tokens} scaleText={scaleText} onRetry={() => { setLoading(true); void load(); }} /> : (
         <FlatList

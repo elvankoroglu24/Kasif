@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SearchService } from '../../database/search';
 import { SearchResult } from '../../database/types';
 
@@ -18,13 +19,13 @@ const FILTERS = [
   { label: 'Tümü', value: 'all' },
   { label: 'Hadis', value: 'hadith' },
   { label: 'Şerh', value: 'commentary' },
-  { label: 'Kur\'an', value: 'ayah' },
   { label: 'Araştırmalarım', value: 'research' },
   { label: 'Diğer', value: 'other' },
 ];
 
 export default function SearchScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -61,7 +62,6 @@ export default function SearchScreen() {
     if (activeFilter === 'research') return item.type === 'research';
     if (activeFilter === 'commentary') return item.type === 'commentary';
     if (activeFilter === 'hadith') return item.type === 'content'; // Simplified mapping
-    if (activeFilter === 'ayah') return item.type === 'content'; // Needs work-based filtering in real data
     return true;
   });
 
@@ -120,7 +120,7 @@ export default function SearchScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <View style={styles.searchBar}>
           <Ionicons name="search" size={20} color="#999" style={styles.searchIcon} />
           <TextInput

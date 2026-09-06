@@ -10,12 +10,14 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FavoritesService } from '../../database/favorites';
 import { FavoriteHadithItem, Section } from '../../database/types';
 import { displaySectionTitle } from '../../utils/sectionTitle';
 
 export default function FavoritesScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [items, setItems] = useState<FavoriteHadithItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -110,7 +112,7 @@ export default function FavoritesScreen() {
           data={items}
           renderItem={renderItem}
           keyExtractor={(item) => item.content_id.toString()}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 30 }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
           ListHeaderComponent={items.length > 0 ? (
             <View style={styles.introCard}>

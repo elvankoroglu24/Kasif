@@ -36,8 +36,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="discover"
         options={{
-          title: 'Keşfet',
-          headerTitle: 'Keşfet',
+          title: 'Hadisler',
+          headerTitle: 'Hadisler',
           tabBarIcon: ({ color, size }) => <Ionicons name="compass-outline" size={size} color={color} />,
         }}
       />
